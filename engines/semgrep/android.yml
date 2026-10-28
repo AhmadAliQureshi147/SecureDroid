@@ -1,0 +1,36 @@
+rules:
+  - id: NETWORK-TRUST-ALL
+    languages: [java, kotlin]
+    severity: ERROR
+    message: Certificate validation does not check the server certificate.
+    pattern-regex: '(void\s+checkServerTrusted\s*\([^)]*\)\s*\{\s*\}|fun\s+checkServerTrusted\s*\([^)]*\)\s*\{\s*\})'
+  - id: NETWORK-SSL-ERROR-PROCEED
+    languages: [java, kotlin]
+    severity: ERROR
+    message: A WebView SSL error handler calls proceed.
+    pattern-regex: 'onReceivedSslError[\s\S]{0,400}proceed\s*\('
+  - id: STORAGE-WORLD-ACCESSIBLE
+    languages: [java, kotlin]
+    severity: ERROR
+    message: A file is opened with a world-accessible mode.
+    pattern-regex: 'MODE_WORLD_(READABLE|WRITEABLE)'
+  - id: CRYPTO-ECB
+    languages: [java, kotlin]
+    severity: WARNING
+    message: A cipher is requested in ECB mode.
+    pattern-regex: 'Cipher\.getInstance\(\s*"[^"]*\/ECB\/'
+  - id: CRYPTO-WEAK-ALGORITHM
+    languages: [java, kotlin]
+    severity: ERROR
+    message: A broken or obsolete cipher algorithm is requested.
+    pattern-regex: 'Cipher\.getInstance\(\s*"(?:DESede|DES|RC2|RC4|Blowfish|PBEWithMD5)'
+  - id: WEBVIEW-DEBUG
+    languages: [java, kotlin]
+    severity: WARNING
+    message: WebView contents debugging is enabled.
+    pattern-regex: 'setWebContentsDebuggingEnabled\s*\(\s*true\s*\)'
+  - id: FLUTTER-BAD-CERTIFICATE
+    languages: [dart]
+    severity: ERROR
+    message: A Dart HTTP client accepts any certificate.
+    pattern-regex: 'badCertificateCallback\s*[:=][^\n]*true'

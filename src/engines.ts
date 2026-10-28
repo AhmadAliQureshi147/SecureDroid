@@ -1,0 +1,188 @@
+import { spawnSync } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { collectFiles, toFinding } from "./analysis.ts";
+import { languageOf } from "./detect.ts";
+import { ruleStillMatches } from "./rules.ts";
+import { STANDARDS, requirementIds } from "./standards.ts";
+import { resolveTool } from "./tools.ts";
+import type { Category, Finding, SourceFile } from "./types.ts";
+
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+interface ToolHit {
+  ruleId: string;
+  path: string;
+  line: number;
+  message: string;
+}
+
+export function collectExternalFindings(projectRoot: string): { findings: Finding[]; notes: string[] } {
+  const files = collectFiles(projectRoot).files;
+  const notes: string[] = [];
+  const findings: Finding[] = [];
+  const semgrep = resolveTool("semgrep");
+  if (!semgrep) notes.push("semgrep is not installed. The built-in rules still ran.");
+  else notes.push(runPack(findings, "semgrep", semgrep, ["--config", path.join(ROOT, "engines", "semgrep"), "--json", "--quiet", "--metrics", "off", "--disable-version-check", projectRoot], projectRoot, files));
+  const astGrep = resolveTool("ast-grep");
+  if (!astGrep) notes.push("ast-grep is not installed. Structural checks use SecureDroid patterns.");
+  else notes.push(runPack(findings, "ast-grep", astGrep, ["scan", "--json=compact", "-c", path.join(ROOT, "engines", "ast-grep", "sgconfig.yml"), projectRoot], projectRoot, files));
+  return { findings, notes };
+}
+
+export function findingsFromSemgrep(stdout: string, projectRoot = "", files: SourceFile[] = []): Finding[] {
+  return confirmHits(parseSemgrep(stdout), projectRoot, files, "semgrep");
+}
+
+export function findingsFromAstGrep(stdout: string, projectRoot = "", files: SourceFile[] = []): Finding[] {
+  return confirmHits(parseAstGrep(stdout), projectRoot, files, "ast-grep");
+}
+
+export function mergeExternal(primary: Finding[], extra: Finding[]): Finding[] {
+  const merged = primary.map((finding) => ({ ...finding, detectionMethods: [...finding.detectionMethods], evidence: [...finding.evidence] }));
+  const added: Finding[] = [];
+  for (const item of extra) {
+    const existing = merged.find((finding) => finding.ruleId === item.ruleId && finding.path === item.path);
+    if (existing) {
+      for (const method of item.detectionMethods) {
+        if (!existing.detectionMethods.includes(method)) existing.detectionMethods.push(method);
+      }
+      if (!existing.evidence.some((evidence) => evidence.description === item.evidence[0]?.description)) {
+        existing.evidence.push(...item.evidence);
+      }
+      continue;
+    }
+    added.push(item);
+  }
+  return [...merged, ...added];
+}
+
+function runPack(findings: Finding[], engine: "semgrep" | "ast-grep", binary: string, args: string[], projectRoot: string, files: SourceFile[]): string {
+  const result = spawnSync(binary, args, {
+    encoding: "utf8",
+    timeout: 20_000,
+    env: { ...process.env, SEMGREP_SEND_METRICS: "off" },
+  });
+  const stdout = result.stdout ?? "";
+  if (!stdout.trim()) return `${engine} did not return results. The built-in rules still ran.`;
+  const hits = engine === "semgrep" ? parseSemgrep(stdout) : parseAstGrep(stdout);
+  const kept = confirmHits(hits, projectRoot, files, engine);
+  findings.push(...kept);
+  const dropped = hits.length - kept.length;
+  return `${engine}: ${kept.length} confirmed, ${dropped} dropped because the built-in rule did not match that file.`;
+}
+
+function confirmHits(hits: ToolHit[], projectRoot: string, files: SourceFile[], engine: "semgrep" | "ast-grep"): Finding[] {
+  const now = new Date().toISOString();
+  const findings: Finding[] = [];
+  for (const hit of hits) {
+    const relative = projectPath(projectRoot, hit.path);
+    if (!relative) continue;
+    const file = files.find((item) => item.path === relative);
+    if (!file || !ruleStillMatches(hit.ruleId, file, files)) continue;
+    findings.push(
+      toFinding(
+        {
+          ruleId: hit.ruleId,
+          title: hit.message || STANDARDS[hit.ruleId]?.summary || hit.ruleId,
+          language: languageOf(relative) ?? "kotlin",
+          path: relative,
+          line: hit.line,
+          severity: "P2",
+          confidence: "medium",
+          category: categoryFor(hit.ruleId),
+          detectionMethods: ["pattern"],
+          evidence: [{ path: relative, line: hit.line, description: `${engine} matched this rule, and the built-in rule still matches the file.` }],
+          attackScenario: "An open-source rule matched this source line. The built-in rule agrees the file still contains the issue.",
+          preconditions: ["The matched code is part of the app that ships."],
+          why: hit.message || STANDARDS[hit.ruleId]?.summary || "An external Android rule matched.",
+          recommendation: "Confirm the match against the surrounding code, then stage a fix through SecureDroid.",
+          recipe: "manual",
+          masvs: requirementIds(hit.ruleId),
+          fingerprintSource: `${engine}:${hit.ruleId}:${relative}:${hit.line}`,
+        },
+        now,
+        files,
+      ),
+    );
+  }
+  return findings;
+}
+
+function parseSemgrep(stdout: string): ToolHit[] {
+  let parsed: { results?: Array<{ check_id?: string; path?: string; start?: { line?: number }; extra?: { message?: string } }> };
+  try {
+    parsed = JSON.parse(stdout) as typeof parsed;
+  } catch {
+    return [];
+  }
+  const hits: ToolHit[] = [];
+  for (const result of parsed.results ?? []) {
+    const ruleId = ruleFromCheck(result.check_id ?? "");
+    if (!ruleId || !result.path || !result.start?.line) continue;
+    hits.push({ ruleId, path: result.path, line: result.start.line, message: result.extra?.message ?? "" });
+  }
+  return hits;
+}
+
+function parseAstGrep(stdout: string): ToolHit[] {
+  const trimmed = stdout.trim();
+  if (!trimmed) return [];
+  try {
+    return astHits(JSON.parse(trimmed) as unknown);
+  } catch {
+    return trimmed.split(/\r?\n/).flatMap((line) => {
+      try {
+        return astHits(JSON.parse(line) as unknown);
+      } catch {
+        return [];
+      }
+    });
+  }
+}
+
+function astHits(value: unknown): ToolHit[] {
+  const rows = Array.isArray(value) ? value : [value];
+  const hits: ToolHit[] = [];
+  for (const result of rows) {
+    if (!result || typeof result !== "object") continue;
+    const row = result as { ruleId?: string; file?: string; message?: string; range?: { start?: { line?: number } } };
+    const ruleId = ruleFromCheck(row.ruleId ?? "");
+    const line = row.range?.start?.line;
+    if (!ruleId || !row.file || line === undefined) continue;
+    hits.push({ ruleId, path: row.file, line: line + 1, message: row.message ?? "" });
+  }
+  return hits;
+}
+
+function ruleFromCheck(checkId: string): string | undefined {
+  const parts = checkId.split(/[./]/).filter(Boolean);
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const candidate = parts[index];
+    if (candidate && STANDARDS[candidate] && candidate !== "LLM-INVESTIGATION") return candidate;
+  }
+  return undefined;
+}
+
+function categoryFor(ruleId: string): Category {
+  if (ruleId.startsWith("NETWORK") || ruleId.startsWith("FLUTTER-BAD")) return "network";
+  if (ruleId.startsWith("CRYPTO") || ruleId.startsWith("SECRET") || ruleId.startsWith("BUILD-SIGNING")) return "cryptography";
+  if (ruleId.startsWith("STORAGE") || ruleId.startsWith("ANDROID-BACKUP")) return "storage";
+  if (ruleId.startsWith("WEBVIEW")) return "webview";
+  if (ruleId.startsWith("INJECTION") || ruleId.startsWith("CODE-")) return "injection";
+  if (ruleId.startsWith("PRIVACY")) return "privacy";
+  if (ruleId.startsWith("ANDROID-DEBUG") || ruleId.startsWith("BUILD-RELEASE")) return "resilience";
+  return "platform";
+}
+
+function projectPath(projectRoot: string, filePath: string): string | undefined {
+  const normalized = filePath.replace(/\\/g, "/");
+  if (normalized.split("/").includes("..")) return undefined;
+  if (!projectRoot) {
+    if (path.isAbsolute(filePath)) return undefined;
+    return normalized.replace(/^\.\//, "");
+  }
+  const relative = path.relative(projectRoot, path.resolve(projectRoot, filePath));
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
+  return relative.replace(/\\/g, "/");
+}

@@ -1,0 +1,7 @@
+id: kotlin.NETWORK-TRUST-ALL
+language: kotlin
+message: Certificate validation does not check the server certificate.
+severity: error
+rule:
+  kind: function_declaration
+  regex: "checkServerTrusted"

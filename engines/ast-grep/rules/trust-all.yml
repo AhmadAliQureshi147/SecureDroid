@@ -1,0 +1,10 @@
+id: java.NETWORK-TRUST-ALL
+language: java
+message: Certificate validation does not check the server certificate.
+severity: error
+rule:
+  kind: method_declaration
+  regex: "checkServerTrusted"
+  not:
+    has:
+      kind: expression_statement

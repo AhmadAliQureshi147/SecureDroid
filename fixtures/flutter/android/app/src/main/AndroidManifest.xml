@@ -1,0 +1,15 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.example.demo">
+    <application android:allowBackup="false">
+        <activity android:name=".MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <receiver android:name=".ChannelBridge" android:exported="true">
+            <intent-filter>
+                <action android:name="com.example.demo.UNSAFE_EVENT" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

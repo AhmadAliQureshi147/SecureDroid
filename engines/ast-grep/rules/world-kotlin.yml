@@ -1,0 +1,7 @@
+id: kotlin.STORAGE-WORLD-ACCESSIBLE
+language: kotlin
+message: A file is opened with a world-accessible mode.
+severity: error
+rule:
+  regex: "MODE_WORLD_(READABLE|WRITEABLE)"
+  kind: simple_identifier

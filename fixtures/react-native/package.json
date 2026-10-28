@@ -1,0 +1,6 @@
+{
+  "name": "demo",
+  "dependencies": {
+    "react-native": "0.76.0"
+  }
+}
