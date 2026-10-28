@@ -127,6 +127,40 @@ node --experimental-strip-types src/cli.ts accept <finding-id> /path/to/android-
 
 Findings and exceptions are stored in `<app>/.secure-droid/store.json`. `fix` writes a staged patch there. `accept` saves it only when the review is not blocked and the file still matches the scanned bytes. `reject` discards the stage and leaves source unchanged.
 
+### Windows
+
+Install Node.js 22.18 or newer, Git for Windows, and [Bun](https://bun.sh). Android Studio does not need to be open. Use the project folder that contains `AndroidManifest.xml` and Gradle, `pubspec.yaml` for Flutter, or `package.json` for React Native.
+
+Open **Git Bash** and clone both repositories:
+
+```bash
+git clone https://github.com/AhmadAliQureshi147/SecureDroid.git
+cd SecureDroid
+git clone --depth 1 https://github.com/can1357/oh-my-pi.git oh-my-pi
+cd oh-my-pi && bun install && cd ..
+npm install
+```
+
+Start the chat agent from Git Bash. `npm run omp` needs Bash.
+
+```bash
+npm run omp -- /c/Users/you/AndroidStudioProjects/YourApp
+```
+
+Inside the session, run `/android-scan` and then `/android-review`. The planted sample is:
+
+```bash
+npm run omp -- fixtures/native-android
+```
+
+A scan without the chat agent works in PowerShell:
+
+```powershell
+node --experimental-strip-types src/cli.ts scan C:\Users\you\AndroidStudioProjects\YourApp
+```
+
+Optional on Windows: `pip install semgrep` and leave `semgrep` on your PATH. `@ast-grep/cli` is installed by `npm install`. A missing scanner is reported as unavailable and is not treated as a pass.
+
 ## Architecture
 
 ```text
