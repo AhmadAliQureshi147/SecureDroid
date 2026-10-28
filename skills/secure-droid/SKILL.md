@@ -9,7 +9,7 @@ SecureDroid is the Android security workflow for this session. Oh My Pi reads, s
 
 ## Workflow
 
-1. Call `android_security` with `detect`, then `map`, then `scan`.
+1. Call `android_security` with `detect`, then `map`, then `scan`. Then call action `read` from page 1 until the last page and read the Kotlin, Java, Dart, JavaScript, TypeScript, manifest, and Gradle source.
 2. Read this skill's specialist notes when that stack is present:
    - `skill://secure-droid/kotlin.md`
    - `skill://secure-droid/compose.md`

@@ -10,6 +10,7 @@ import { runSecureDroid } from "../src/engine.ts";
 import { guardToolCall } from "../src/guard.ts";
 import secureDroid from "../src/index.ts";
 import { findingsFromAstGrep, findingsFromSemgrep } from "../src/engines.ts";
+import { checkFileSyntax } from "../src/syntax.ts";
 import { proposePatch, reviewChange } from "../src/patch.ts";
 import { MASVS_REQUIREMENTS, STANDARDS, UNMAPPED_REQUIREMENTS } from "../src/standards.ts";
 import { resolveInside } from "../src/text.ts";
@@ -23,6 +24,33 @@ function ids(findings: Finding[]): string {
 
 function project(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "securedroid-"));
+}
+
+function stubFinding(ruleId: string): Finding {
+  return {
+    id: ruleId,
+    title: ruleId,
+    language: "kotlin",
+    path: "app/src/main/java/example/File.kt",
+    line: 1,
+    severity: "P2",
+    confidence: "high",
+    category: "platform",
+    ruleId,
+    detectionMethods: ["pattern"],
+    evidence: [],
+    attackScenario: "",
+    preconditions: [],
+    why: "",
+    recommendation: "fix it safely",
+    recipe: "automatic",
+    runtime: { exposure: "build-time", summary: "" },
+    verification: { status: "not-run", checks: [] },
+    status: "open",
+    fingerprint: "x",
+    masvs: [],
+    updatedAt: "",
+  };
 }
 
 function write(root: string, relative: string, text: string): void {
@@ -92,6 +120,12 @@ test("native fixture finds planted issues and skips mitigated or safe code", () 
     "CODE-DESERIALIZATION",
     "PLATFORM-NORMAL-PERMISSION",
     "ANDROID-IMPLICIT-EXPORT",
+    "NETWORK-WEAK-TLS",
+    "PLATFORM-PARSE-URI",
+    "CODE-DYNAMIC-LOAD",
+    "WEBVIEW-SAFE-BROWSING",
+    "STORAGE-PROVIDER-PATH",
+    "PLATFORM-SHARED-USER-ID",
   ]) {
     assert.ok(rules.has(rule), `missing ${rule}\n${ids(findings)}`);
   }
@@ -112,6 +146,7 @@ test("native fixture finds planted issues and skips mitigated or safe code", () 
   assert.equal(cleartext?.runtime.exposure, "build-time");
   const trust = findings.find((finding) => finding.ruleId === "NETWORK-TRUST-ALL");
   assert.equal(trust?.runtime.exposure, "runtime-conditional");
+  assert.equal(findings.find((finding) => finding.ruleId === "NETWORK-WEAK-TLS")?.runtime.exposure, "runtime-reachable");
   const world = findings.find((finding) => finding.ruleId === "STORAGE-WORLD-ACCESSIBLE");
   assert.equal(world?.runtime.exposure, "runtime-conditional");
 
@@ -372,6 +407,7 @@ test("the model tool cannot accept patches, and unsafe writes are blocked", asyn
   assert.equal(actions.includes("record"), true);
   assert.equal(actions.includes("judge"), true);
   assert.equal(actions.includes("remediate"), true);
+  assert.equal(actions.includes("read"), true);
   assert.ok(commands.includes("android-triage"));
   assert.ok(commands.includes("android-accept"));
   assert.ok(commands.includes("android-remediate"));
@@ -505,6 +541,111 @@ test("runtime follows a call from an exported component and stops at an uncalled
   assert.equal(exposure("Calls.kt", 5), "runtime-conditional");
   assert.equal(exposure("TrustAll.java", 2), "runtime-reachable");
   assert.equal(exposure("UnusedTrust.java", 2), "runtime-conditional");
+});
+
+test("navigation, intent targets, interfaces, and compose destinations extend the call path", () => {
+  const nav = evaluate([
+    {
+      path: "app/src/main/res/navigation/main.xml",
+      text: '<navigation app:startDestination="@id/home"><fragment android:id="@+id/home" android:name="example.HomeFragment" /><fragment android:id="@+id/other" android:name="example.OtherFragment"><action app:destination="@id/detail" /></fragment><fragment android:id="@+id/detail" android:name="example.DetailFragment" /><fragment android:id="@+id/orphan" android:name="example.OrphanFragment" /></navigation>',
+    },
+    {
+      path: "app/src/main/java/example/HomeFragment.kt",
+      text: "class HomeFragment {\n  override fun onViewCreated() {\n    Log.d(\"auth\", \"password=$password\")\n  }\n}\n",
+    },
+    {
+      path: "app/src/main/java/example/OrphanFragment.kt",
+      text: "class OrphanFragment {\n  override fun onViewCreated() {\n    Log.d(\"auth\", \"password=$password\")\n  }\n}\n",
+    },
+  ]);
+  assert.equal(nav.findings.find((finding) => finding.path.endsWith("HomeFragment.kt"))?.runtime.exposure, "runtime-reachable");
+  assert.equal(nav.findings.find((finding) => finding.path.endsWith("OrphanFragment.kt"))?.runtime.exposure, "runtime-conditional");
+
+  const intent = evaluate([
+    {
+      path: "app/src/main/AndroidManifest.xml",
+      text: '<manifest><application><activity android:name=".Home" android:exported="true" /></application></manifest>',
+    },
+    {
+      path: "app/src/main/java/example/Home.kt",
+      text: "class Home : Activity() {\n  override fun onCreate(savedInstanceState: Bundle?) {\n    setClassName(this, \"example.Helper\")\n  }\n}\n",
+    },
+    {
+      path: "app/src/main/java/example/Helper.kt",
+      text: "class Helper {\n  fun show() {\n    Log.d(\"auth\", \"password=$password\")\n  }\n}\n",
+    },
+  ]);
+  assert.equal(intent.findings.find((finding) => finding.path.endsWith("Helper.kt"))?.runtime.exposure, "runtime-reachable");
+
+  const typed = evaluate([
+    {
+      path: "app/src/main/AndroidManifest.xml",
+      text: '<manifest><application><activity android:name=".Home" android:exported="true" /></application></manifest>',
+    },
+    { path: "app/src/main/java/example/Screen.kt", text: "interface Screen {\n  fun render()\n}\n" },
+    {
+      path: "app/src/main/java/example/Detail.kt",
+      text: "class Detail : Screen {\n  override fun render() {\n    Log.d(\"auth\", \"password=$password\")\n  }\n}\n",
+    },
+    {
+      path: "app/src/main/java/example/Home.kt",
+      text: "class Home : Activity() {\n  override fun onCreate(savedInstanceState: Bundle?) {\n    val screen: Screen = Detail()\n    screen.render()\n  }\n}\n",
+    },
+  ]);
+  assert.equal(typed.findings.find((finding) => finding.path.endsWith("Detail.kt"))?.runtime.exposure, "runtime-reachable");
+
+  const compose = evaluate([
+    {
+      path: "app/src/main/AndroidManifest.xml",
+      text: '<manifest><application><activity android:name=".MainActivity" android:exported="true" /></application></manifest>',
+    },
+    {
+      path: "app/src/main/java/example/MainActivity.kt",
+      text: "class MainActivity : Activity() {\n  override fun onCreate(savedInstanceState: Bundle?) {\n    setContent { AppNav() }\n  }\n}\nfun AppNav() {\n  composable<DetailScreen>()\n}\n",
+    },
+    {
+      path: "app/src/main/java/example/DetailScreen.kt",
+      text: "fun DetailScreen() {\n  Log.d(\"auth\", \"password=$password\")\n}\n",
+    },
+  ]);
+  assert.equal(compose.findings.find((finding) => finding.path.endsWith("DetailScreen.kt"))?.runtime.exposure, "runtime-reachable");
+});
+
+test("an external rule can add a comment-only trust manager the built-in pattern missed", () => {
+  const commented = "fun checkServerTrusted(chain: Array<X509Certificate>?, authType: String?) {\n  // no certificate check\n}\n";
+  const filled = "fun checkServerTrusted(chain: Array<X509Certificate>?, authType: String?) {\n  check(chain)\n}\n";
+  const extra = findingsFromSemgrep(
+    JSON.stringify({ results: [{ check_id: "NETWORK-TRUST-ALL", path: "app/Trust.kt", start: { line: 1 }, extra: { message: "empty" } }] }),
+    "",
+    [{ path: "app/Trust.kt", text: commented }],
+  );
+  assert.equal(extra.length, 1);
+  const rejected = findingsFromSemgrep(
+    JSON.stringify({ results: [{ check_id: "NETWORK-TRUST-ALL", path: "app/Trust.kt", start: { line: 1 }, extra: { message: "checked" } }] }),
+    "",
+    [{ path: "app/Trust.kt", text: filled }],
+  );
+  assert.equal(rejected.length, 0);
+});
+
+test("backup, manifest debug, and pending intents stage, and a broken patch fails syntax", () => {
+  const backup = proposePatch(
+    { ...stubFinding("ANDROID-BACKUP"), path: "app/src/main/AndroidManifest.xml", language: "xml" },
+    '        android:allowBackup="true"\n',
+  );
+  assert.match(backup.after ?? "", /allowBackup="false"/);
+  const debug = proposePatch(
+    { ...stubFinding("ANDROID-DEBUGGABLE"), path: "app/src/main/AndroidManifest.xml", language: "xml" },
+    '        android:debuggable="true"\n',
+  );
+  assert.match(debug.after ?? "", /debuggable="false"/);
+  const pending = proposePatch(
+    stubFinding("PLATFORM-MUTABLE-PENDING-INTENT"),
+    "    return PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)\n",
+  );
+  assert.match(pending.after ?? "", /FLAG_IMMUTABLE/);
+  assert.equal(checkFileSyntax("fun ok() {}\n").status, "passed");
+  assert.equal(checkFileSyntax("fun bad( {\n").status, "failed");
 });
 
 test("cleartext, WebView debug, and mixed content can be staged; secrets stay recommendations", () => {
@@ -690,6 +831,29 @@ test("the model can pin a finding to a real line, and remediate stages without w
   assert.match(staged.text, /Staged 1 automatic fix/);
   assert.equal(fs.readFileSync(path.join(app, "app/src/main/java/example/Files.kt"), "utf8"), source);
   assert.match(runSecureDroid({ action: "status", root: app }).text, /staged/);
+});
+
+test("source read shows Kotlin, Dart, and React Native code before the review finishes", () => {
+  const root = project();
+  write(root, "app/src/main/AndroidManifest.xml", "<manifest></manifest>\n");
+  write(root, "app/src/main/java/example/Home.kt", `const val password = "super-secret-value"\nfun home() {\n${"  val markerKotlin = 1\n".repeat(500)}}\n`);
+  write(root, "lib/main.dart", `void main() {\n${"  var markerDart = 1;\n".repeat(500)}}\n`);
+  write(root, "App.tsx", `export function App() {\n${"  const markerReact = 1;\n".repeat(500)}}\n`);
+  const first = runSecureDroid({ action: "read", root, page: "1" });
+  assert.equal(first.ok, true, first.text);
+  assert.match(first.text, /Source page 1 of ([2-9])/);
+  const total = Number(/Source page 1 of ([2-9])/.exec(first.text)?.[1] ?? "0");
+  const shown = [first.text];
+  for (let page = 2; page <= total; page += 1) shown.push(runSecureDroid({ action: "read", root, page: String(page) }).text);
+  const all = shown.join("\n");
+  assert.match(all, /markerKotlin/);
+  assert.match(all, /markerDart/);
+  assert.match(all, /markerReact/);
+  assert.match(all, /<redacted>/);
+  assert.doesNotMatch(all, /super-secret-value/);
+  assert.match(shown.at(-1) ?? "", /last page/);
+  const done = runSecureDroid({ action: "read", root, page: "99" });
+  assert.match(done.text, /past the end/);
 });
 
 test("cli reports detection without claiming a clean project is vulnerable", () => {

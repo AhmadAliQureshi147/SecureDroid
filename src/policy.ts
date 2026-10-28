@@ -10,4 +10,7 @@ export const SECURITY_POLICY = [
   "Read the runtime field. runtime-reachable means the behavior is in the shipped code. runtime-conditional means a call path is still unconfirmed. build-time means the artifact or build config carries it.",
   "A model may record an extra finding only with android_security action record, pinned to a real file and line. That finding stays medium confidence and cannot be P0.",
   "Report a finding as a vulnerability only after the verifier upholds it. Withheld findings are candidates.",
+  "Before a production review, call android_security action read from page 1 until the last page. Read the Kotlin, Java, Compose, Flutter/Dart, React Native, manifest, and Gradle source that those pages show.",
+  "Walk insecure Android coding on the source you read: custom TrustManager or HostnameVerifier, obsolete TLS, cleartext, WebView file access, JavaScript bridges, safe browsing turned off, PendingIntent mutability, Intent.parseUri unsafe flags, exported components, world-readable files, FileProvider root paths, sharedUserId, DexClassLoader, SQL or command built from external text, deserialization, zip entry paths, hardcoded keys and secrets, logs and clipboard of secrets, and preferences or external storage holding secrets.",
+  "For each of those, read the runtime field and the line. If the rules missed a real instance, record it on that line. Do not report a missing control, such as absent pinning, absent biometrics, or absent obfuscation, as a vulnerability.",
 ].join(" ");

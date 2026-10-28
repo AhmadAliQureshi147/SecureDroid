@@ -17,11 +17,16 @@ const BUILD_RULES = new Set([
   "NETWORK-CLEARTEXT",
   "NETWORK-USER-CA",
   "PLATFORM-NORMAL-PERMISSION",
+  "DEPENDENCY-ADVISORY",
+  "PLATFORM-SHARED-USER-ID",
+  "STORAGE-PROVIDER-PATH",
 ]);
 
 const ENTRY_METHODS = new Set([
   "main",
   "onCreate",
+  "onCreateView",
+  "onViewCreated",
   "onStart",
   "onResume",
   "onNewIntent",
@@ -151,11 +156,26 @@ function reached(file: SourceFile, line: number, files: SourceFile[]): boolean {
   while (queue.length > 0 && reachedKeys.size < 200) {
     const current = queue.shift();
     if (!current) break;
-    for (const [name, ownerPath] of classOwners) {
-      if (reachedClasses.has(name) || !usesClass(current.body, name)) continue;
+    for (const name of referencedClasses(current.body, classOwners)) {
+      if (reachedClasses.has(name)) continue;
       reachedClasses.add(name);
+      const ownerPath = classOwners.get(name);
       for (const item of spans) {
         if (item.file.path !== ownerPath || reachedKeys.has(item.key)) continue;
+        reachedKeys.add(item.key);
+        queue.push(item);
+      }
+    }
+    for (const name of composeNames(current.body)) {
+      for (const item of spans) {
+        if (item.span.name !== name || reachedKeys.has(item.key)) continue;
+        reachedKeys.add(item.key);
+        queue.push(item);
+      }
+    }
+    for (const link of interfaceLinks(current.body, files, classOwners)) {
+      for (const item of spans) {
+        if (item.file.path !== link.path || item.span.name !== link.method || reachedKeys.has(item.key)) continue;
         reachedKeys.add(item.key);
         queue.push(item);
       }
@@ -199,7 +219,44 @@ function entryNames(files: SourceFile[]): Set<string> {
       if (simple && simple !== "(unnamed)") names.add(simple);
     }
   }
+  for (const name of navigationEntries(files)) names.add(name);
   return names;
+}
+
+function navigationEntries(files: SourceFile[]): Set<string> {
+  const names = new Set<string>();
+  for (const file of files) {
+    if (!file.path.endsWith(".xml") || !file.path.includes("navigation")) continue;
+    const destinations = new Map<string, string>();
+    for (const match of file.text.matchAll(/<(?:fragment|activity|dialog)\b([^>]*)\/?>/g)) {
+      const tag = match[1] ?? "";
+      const id = xmlId(tag, "id");
+      const type = xmlAttr(tag, "name");
+      const simple = type?.split(".").pop();
+      if (id && simple) destinations.set(id, simple);
+    }
+    const start = /startDestination\s*=\s*"@(?:\+|)?id\/([A-Za-z0-9_]+)"/.exec(file.text)?.[1];
+    const linked = new Set<string>();
+    if (start) linked.add(start);
+    for (const match of file.text.matchAll(/<(?:action)\b([^>]*)\/?>/g)) {
+      const destination = xmlId(match[1] ?? "", "destination");
+      if (destination) linked.add(destination);
+    }
+    for (const id of linked) {
+      const name = destinations.get(id);
+      if (name) names.add(name);
+    }
+  }
+  return names;
+}
+
+function xmlAttr(tag: string, name: string): string | undefined {
+  return new RegExp(`(?:android|app):${name}\\s*=\\s*"([^"]+)"`).exec(tag)?.[1];
+}
+
+function xmlId(tag: string, name: string): string | undefined {
+  const value = xmlAttr(tag, name);
+  return value?.match(/@\+?id\/([A-Za-z0-9_]+)/)?.[1];
 }
 
 function declaredClasses(text: string): string[] {
@@ -249,6 +306,60 @@ function calls(body: string, name: string): boolean {
   return new RegExp(`\\b${name}\\s*\\(`).test(withoutDefinition);
 }
 
+function referencedClasses(body: string, owners: Map<string, string>): string[] {
+  const names: string[] = [];
+  for (const name of owners.keys()) {
+    if (usesClass(body, name) || intentNames(body).includes(name) || composeNames(body).includes(name)) names.push(name);
+  }
+  return names;
+}
+
 function usesClass(body: string, name: string): boolean {
-  return new RegExp(`\\bnew\\s+${name}\\b|\\b${name}\\s*\\(`).test(body);
+  return new RegExp(`\\bnew\\s+${name}\\b|\\b${name}\\s*\\(|\\b${name}::class\\b`).test(body);
+}
+
+function intentNames(body: string): string[] {
+  const names: string[] = [];
+  for (const line of body.split("\n")) {
+    if (!/Intent|setClassName|ComponentName|setComponent|Class\.forName/.test(line)) continue;
+    for (const match of line.matchAll(/"((?:[A-Za-z_][\w]*\.)+[A-Za-z_][\w]*)"/g)) {
+      const simple = match[1]?.split(".").pop();
+      if (simple) names.push(simple);
+    }
+  }
+  return names;
+}
+
+function composeNames(body: string): string[] {
+  return [...body.matchAll(/composable\s*<\s*([A-Za-z_][\w]*)\s*>/g)].map((match) => match[1] ?? "").filter(Boolean);
+}
+
+function interfaceLinks(body: string, files: SourceFile[], owners: Map<string, string>): Array<{ path: string; method: string }> {
+  const links: Array<{ path: string; method: string }> = [];
+  const implementors = new Map<string, string[]>();
+  for (const file of files) {
+    for (const match of file.text.matchAll(/\b(?:class|object)\s+[A-Za-z_][\w]*[^{;\n]*?(?::|implements)\s*([^{;\n]+)/g)) {
+      const parents = (match[1] ?? "").split(",").map((part) => part.trim().match(/^([A-Za-z_][\w]*)/)?.[1] ?? "");
+      for (const parent of parents) {
+        if (!parent || !owners.has(parent)) continue;
+        const owner = classOwnerPath(file);
+        if (!owner) continue;
+        implementors.set(parent, [...(implementors.get(parent) ?? []), owner]);
+      }
+    }
+  }
+  for (const [parent, paths] of implementors) {
+    if (!new RegExp(`\\b${parent}\\b`).test(body)) continue;
+    const interfacePath = owners.get(parent);
+    const methods = interfacePath ? functionSpans(files.find((file) => file.path === interfacePath)?.text ?? "").map((span) => span.name) : [];
+    for (const method of methods) {
+      if (method.length < 4 || SKIP_CALLS.has(method) || !calls(body, method)) continue;
+      for (const impl of paths) links.push({ path: impl, method });
+    }
+  }
+  return links;
+}
+
+function classOwnerPath(file: SourceFile): string {
+  return file.path;
 }

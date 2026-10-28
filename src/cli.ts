@@ -14,6 +14,7 @@ function help(): string {
     "  securedroid map [root]",
     "  securedroid scan [root]",
     "  securedroid review [root]",
+    "  securedroid read [page] [root]",
     "  securedroid findings [root]",
     "  securedroid investigate <finding-id> [root]",
     "  securedroid fix <finding-id> [root]",
@@ -28,6 +29,10 @@ function help(): string {
 }
 
 function split(args: string[]): { findingId?: string; reason?: string; root: string } {
+  if (command === "read") {
+    const pageFirst = /^\d+$/.test(args[0] ?? "");
+    return { reason: pageFirst ? args[0] : "1", root: path.resolve((pageFirst ? args[1] : args[0]) ?? process.cwd()) };
+  }
   if (!needsId.has(command)) {
     return { root: path.resolve(args[0] ?? process.cwd()) };
   }
@@ -55,6 +60,7 @@ if (command === "help" || command === "--help" || command === "-h") {
     root: parsed.root,
     findingId: parsed.findingId,
     reason: parsed.reason,
+    page: command === "read" ? parsed.reason : undefined,
   });
   console.log(result.text);
   if (!result.ok) process.exitCode = 1;

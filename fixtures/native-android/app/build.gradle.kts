@@ -2,6 +2,10 @@ plugins {
     id("com.android.application")
 }
 
+dependencies {
+    implementation("com.squareup.okhttp3:okhttp:3.14.9")
+}
+
 android {
     buildTypes {
         debug {

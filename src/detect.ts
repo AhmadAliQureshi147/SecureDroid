@@ -98,7 +98,7 @@ export function detectFromFiles(files: SourceFile[], tools = availableTools()): 
 
   const limitations = [
     "SecureDroid does not claim complete MASVS coverage. masvs on a finding names the requirement the implemented check relates to.",
-    "Dependency versions are inventoried only. They are not compared with a vulnerability database.",
+    "Dependency versions are compared with a local OSV snapshot. A package missing from that snapshot is not a pass.",
     "Optional analyzers that are not installed are reported as unavailable and are not treated as passed.",
   ];
   if (!tools["ast-grep"]) limitations.push("ast-grep is not installed. Structural checks use SecureDroid patterns and Oh My Pi's ast_grep tool when that session is running.");

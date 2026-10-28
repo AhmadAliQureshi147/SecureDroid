@@ -44,7 +44,7 @@ interface HostApi {
   sendUserMessage(content: string): void;
 }
 
-const TOOL_ACTIONS = ["detect", "map", "scan", "review", "triage", "investigate", "explain", "recommend", "fix", "remediate", "verify", "judge", "status", "record"] as const;
+const TOOL_ACTIONS = ["detect", "map", "scan", "review", "read", "triage", "investigate", "explain", "recommend", "fix", "remediate", "verify", "judge", "status", "record"] as const;
 
 const detectedProjects = new Map<string, boolean>();
 
@@ -89,7 +89,7 @@ export default function secureDroid(pi: HostApi): void {
     name: "android_security",
     label: "Android security",
     description:
-      "Android security harness for Kotlin, Java, Compose, Flutter, React Native, manifests, and Gradle. detect, map, scan, triage, investigate, explain, record a line-pinned finding, judge a finding, and stage fixes with fix or remediate. Only upheld findings are vulnerabilities. This tool does not apply patches; the developer accepts them.",
+      "Android security harness for Kotlin, Java, Compose, Flutter, React Native, manifests, and Gradle. detect, map, scan, then read every source page before judging. triage, investigate, explain, record a line-pinned finding, judge a finding, and stage fixes with fix or remediate. Only upheld findings are vulnerabilities. This tool does not apply patches; the developer accepts them.",
     loadMode: "essential",
     approval: "write",
     parameters: z.object({
@@ -105,6 +105,7 @@ export default function secureDroid(pi: HostApi): void {
       severity: z.string().describe("P1, P2, P3, or informational. P0 is rejected.").optional(),
       masvs: z.string().describe("Optional MASVS v2 requirement id for action record.").optional(),
       decision: z.string().describe("For action judge: uphold or reject.").optional(),
+      page: z.string().describe("1-based source page for action read. Start at 1 and continue until the last page.").optional(),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const base = ctx.cwd || process.cwd();
@@ -123,6 +124,7 @@ export default function secureDroid(pi: HostApi): void {
         severity: text(params.severity),
         masvs: text(params.masvs),
         decision: text(params.decision),
+        page: text(params.page),
       });
       return {
         content: [{ type: "text", text: result.text }],
@@ -143,7 +145,7 @@ export default function secureDroid(pi: HostApi): void {
       description: "Scan and ask the model to investigate the Android project",
       run: (_args, cwd) => ({
         text: runSecureDroid({ action: "review", root: cwd }).text,
-        user: "Review this Android project with SecureDroid. Use android_security, then the android-verifier agent. Report only upheld findings. Do not modify source files.",
+        user: "Review this Android project before production. Call android_security action read from page 1 until the last page and read the Kotlin, Java, Flutter, and React Native source. Record weak coding on a real line the rules missed, then spawn android-verifier. Report only upheld findings. Do not modify source files.",
       }),
     },
     { name: "android-investigate", description: "Show evidence for one finding", run: (args, cwd) => ({ text: runSecureDroid({ action: "investigate", root: cwd, findingId: args.trim() }).text }) },

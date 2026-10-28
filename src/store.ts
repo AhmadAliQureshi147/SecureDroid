@@ -3,6 +3,7 @@ import path from "node:path";
 import { collectFiles, evaluateRepository, toFinding } from "./analysis.ts";
 import { languageOf } from "./detect.ts";
 import { proposePatch, reviewChange, unifiedDiff } from "./patch.ts";
+import { checkFileSyntax } from "./syntax.ts";
 import { MASVS_REQUIREMENTS, requirementIds } from "./standards.ts";
 import { containedRealpath, fingerprintOf, redact, sha256 } from "./text.ts";
 import type { Category, ExceptionRecord, Finding, Severity, StagedChange, StoreData, Verification } from "./types.ts";
@@ -210,14 +211,20 @@ export function stageFix(root: string, findingId: string): StagedChange {
               : "The staged file no longer matches the original check. This does not by itself prove the issue is resolved.",
         },
         {
+          name: "file-syntax",
+          status: proposal.after ? checkFileSyntax(proposal.after).status : "not-run",
+          detail: proposal.after ? checkFileSyntax(proposal.after).detail : "No source patch was generated.",
+        },
+        {
           name: "build-and-tests",
           status: "not-run",
           detail: "Build and unit tests were not executed. SecureDroid does not run repository build scripts.",
         },
       ]
     : [{ name: "deterministic-rules", status: "not-run", detail: "No source patch was generated." }];
+  const syntaxFailed = checks.some((check) => check.name === "file-syntax" && check.status === "failed");
   const status: Verification["status"] =
-    review.decision === "blocked" ? "blocked" : proposal.after ? "partial" : "not-run";
+    review.decision === "blocked" ? "blocked" : syntaxFailed ? "failed" : proposal.after ? "partial" : "not-run";
   const stage: StagedChange = {
     findingId,
     path: finding.path,
@@ -267,12 +274,20 @@ export function verifyStaged(root: string, findingId: string): StagedChange {
           detail: stage.review.reasons.join(" ") || "The staged file no longer matches the original check.",
         },
         {
+          name: "file-syntax",
+          status: checkFileSyntax(stage.patched).status,
+          detail: checkFileSyntax(stage.patched).detail,
+        },
+        {
           name: "build-and-tests",
           status: "not-run",
           detail: "Build and unit tests were not executed.",
         },
       ],
     };
+    if (stage.verification.checks.some((check) => check.name === "file-syntax" && check.status === "failed")) {
+      stage.verification.status = "failed";
+    }
   }
   const finding = data.findings.find((item) => item.id === findingId);
   if (finding) finding.verification = stage.verification;

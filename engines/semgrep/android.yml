@@ -3,7 +3,7 @@ rules:
     languages: [java, kotlin]
     severity: ERROR
     message: Certificate validation does not check the server certificate.
-    pattern-regex: '(void\s+checkServerTrusted\s*\([^)]*\)\s*\{\s*\}|fun\s+checkServerTrusted\s*\([^)]*\)\s*\{\s*\})'
+    pattern-regex: '(void\s+checkServerTrusted\s*\([^)]*\)\s*\{\s*\}|fun\s+checkServerTrusted\s*\([^)]*\)\s*\{[^{}]*\})'
   - id: NETWORK-SSL-ERROR-PROCEED
     languages: [java, kotlin]
     severity: ERROR

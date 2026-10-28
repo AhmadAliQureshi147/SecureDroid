@@ -19,6 +19,8 @@ Android Studio does not need to be open. Point the commands below at the project
 - Open-source scanners. Semgrep and ast-grep run when installed. A match is kept only when it names a SecureDroid rule and the built-in rule still matches that file.
 - Write guard. The session blocks new trust-all certificate checks, allow-all hostname verifiers, ignored TLS errors, world-readable file modes, and universal WebView file access.
 - Secret redaction, path confinement, and fingerprint-scoped exceptions. An exception expires when the evidence changes.
+- Insecure-coding pass for obsolete TLS, unsafe `Intent.parseUri`, `DexClassLoader`, WebView safe browsing turned off, FileProvider root paths, `sharedUserId`, and world-readable `setReadable`. The model reads the runtime field for each and can record a variant the rules missed.
+- Source read. `/android-review` and `android_security` action `read` show the project source, page by page, for Kotlin, Java, Flutter/Dart, React Native, manifests, and Gradle. The review is not finished until the last page. Secrets in assignments are redacted. The model still has to record a real line.
 
 The launcher activity, a WebView with JavaScript enabled, and ordinary Compose state are not findings by themselves.
 
@@ -57,7 +59,9 @@ Slash commands inside the session:
 Automatic patches:
 
 - `MODE_WORLD_READABLE` and `MODE_WORLD_WRITEABLE` become `MODE_PRIVATE`
-- `debuggable` is turned off inside the release build type only
+- `debuggable` is turned off inside the release build type, and `android:debuggable` is turned off on the manifest line
+- `android:allowBackup="true"` becomes `false` on the finding line
+- `FLAG_IMMUTABLE` is added to a same-line `PendingIntent` factory call
 - cleartext is turned off on the finding line
 - `setWebContentsDebuggingEnabled(true)` becomes `false`
 - `MIXED_CONTENT_ALWAYS_ALLOW` becomes `MIXED_CONTENT_NEVER_ALLOW`
@@ -152,7 +156,8 @@ A scan collects source, runs the built-in rules, merges confirmed external match
 Verification of a staged fix:
 
 - `not-run` — no source patch, or the check did not run
-- `partial` — the static check no longer matches, and the build was not run
+- `partial` — the static check no longer matches, the patched file's delimiters balance, and the build was not run
+- `failed` — the patched file has a broken delimiter
 - `blocked` or `failed` — the patch is stale, unsafe, or the original check still matches
 - `passed` — not used, because the build and tests were not run
 
@@ -166,7 +171,7 @@ These requirements are not default findings, because a pattern cannot establish 
 
 - Authentication and step-up (`MASVS-AUTH-1` through `MASVS-AUTH-3`)
 - Certificate pinning (`MASVS-NETWORK-2`), which is hardening
-- Minimum SDK, forced updates, and dependency advisories (`MASVS-CODE-1` through `MASVS-CODE-3`)
+- Minimum SDK and forced updates (`MASVS-CODE-1` and `MASVS-CODE-2`). Dependency versions are compared with the local OSV snapshot (`MASVS-CODE-3`). A package that is not in the snapshot is not a pass.
 - Tamper checks and obfuscation (`MASVS-RESILIENCE-1` through `MASVS-RESILIENCE-3`)
 - Privacy notices and user control (`MASVS-PRIVACY-2` through `MASVS-PRIVACY-4`)
 
@@ -180,4 +185,4 @@ npm test
 
 ## Limits
 
-SecureDroid does not discover every vulnerability and it does not replace a penetration test. An empty scan does not mean the app meets MASVS. Dependency versions are not compared with an advisory database. There is no CI gate, dashboard, or hosted model. The Oh My Pi provider you configure handles model traffic.
+SecureDroid does not discover every vulnerability and it does not replace a penetration test. An empty scan does not mean the app meets MASVS. The advisory check is a local OSV snapshot, not every published advisory. There is no CI gate, dashboard, or hosted model. The Oh My Pi provider you configure handles model traffic.

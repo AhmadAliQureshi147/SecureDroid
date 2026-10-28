@@ -1,0 +1,12 @@
+{
+  "source": "OSV API snapshot. Packages missing from this file are not treated as safe.",
+  "advisories": [
+    {
+      "id": "GHSA-3cqm-mf7h-prrj",
+      "summary": "Square OkHttp can accept the wrong certificate",
+      "ecosystem": "Maven",
+      "name": "com.squareup.okhttp3:okhttp",
+      "events": [{ "introduced": "0" }, { "fixed": "4.9.2" }]
+    }
+  ]
+}

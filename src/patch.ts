@@ -49,6 +49,13 @@ function patchReleaseDebuggable(text: string): string | undefined {
   return text.slice(0, startMatch.index) + patched + text.slice(end + 1);
 }
 
+function patchPendingIntent(line: string, language: string): string | undefined {
+  if (!/PendingIntent\.get(?:Activity|Service|Broadcast)\s*\(/.test(line) || /FLAG_IMMUTABLE/.test(line) || !line.includes(")")) return undefined;
+  const joiner = language === "kotlin" ? " or " : " | ";
+  const end = line.lastIndexOf(")");
+  return `${line.slice(0, end)}${joiner}PendingIntent.FLAG_IMMUTABLE${line.slice(end)}`;
+}
+
 function replaceLine(text: string, lineNumber: number, transform: (line: string) => string | undefined): string | undefined {
   const lines = text.split("\n");
   const current = lines[lineNumber - 1];
@@ -113,8 +120,20 @@ export function proposePatch(finding: Finding, before: string): { after?: string
     if (after) return { after, kind: "patch", note: "This stops the WebView from allowing mixed content." };
   }
   if (finding.ruleId === "ANDROID-DEBUGGABLE") {
-    const after = before.replace('android:debuggable="true"', 'android:debuggable="false"');
-    if (after !== before) return { after, kind: "patch", note: "This turns the manifest debug flag off. Confirm the debug build type still enables it." };
+    const after = replaceLine(before, finding.line, (line) =>
+      line.includes('android:debuggable="true"') ? line.replace('android:debuggable="true"', 'android:debuggable="false"') : undefined,
+    );
+    if (after) return { after, kind: "patch", note: "This turns the manifest debug flag off. Confirm the debug build type still enables it." };
+  }
+  if (finding.ruleId === "ANDROID-BACKUP") {
+    const after = replaceLine(before, finding.line, (line) =>
+      line.includes('android:allowBackup="true"') ? line.replace('android:allowBackup="true"', 'android:allowBackup="false"') : undefined,
+    );
+    if (after) return { after, kind: "patch", note: "This turns backup off. Reject it if the product needs Android backup." };
+  }
+  if (finding.ruleId === "PLATFORM-MUTABLE-PENDING-INTENT") {
+    const after = replaceLine(before, finding.line, (line) => patchPendingIntent(line, finding.language));
+    if (after) return { after, kind: "patch", note: "This adds FLAG_IMMUTABLE to the PendingIntent on this line." };
   }
   return {
     kind: "recommendation",

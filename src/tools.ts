@@ -25,9 +25,17 @@ function locate(name: "semgrep" | "ast-grep"): string | undefined {
   return undefined;
 }
 
+export function toolEnv(): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    SEMGREP_SEND_METRICS: "off",
+  };
+}
+
 function toolVersion(command: string, name: "semgrep" | "ast-grep"): boolean {
-  const result = spawnSync(command, ["--version"], { encoding: "utf8" });
+  const result = spawnSync(command, ["--version"], { encoding: "utf8", env: toolEnv() });
   if (result.status !== 0) return false;
   const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`;
-  return name === "ast-grep" ? /ast-grep/i.test(output) : /semgrep/i.test(output);
+  if (name === "ast-grep") return /ast-grep/i.test(output);
+  return /\d+\.\d+/.test(output);
 }

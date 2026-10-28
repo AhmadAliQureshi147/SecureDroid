@@ -1,3 +1,4 @@
+import { dependencyFindings } from "./advisories.ts";
 import type { Confidence, Draft, Evidence, Language, Severity, SourceFile } from "./types.ts";
 import { languageOf } from "./detect.ts";
 import { isLauncher, onlyProtectedBroadcasts, parseManifest } from "./manifest.ts";
@@ -240,7 +241,7 @@ function scanSource(file: SourceFile): Draft[] {
     );
   }
 
-  for (const match of matchesIn(text, /MODE_WORLD_READABLE|MODE_WORLD_WRITEABLE/g)) {
+  for (const match of matchesIn(text, /MODE_WORLD_READABLE|MODE_WORLD_WRITEABLE|set(?:Readable|Writable|Executable)\s*\(\s*true\s*,\s*false\s*\)/g)) {
     const sensitive = /password|token|secret|account/i.test(text);
     found.push(
       draft({
@@ -486,9 +487,105 @@ function scanSource(file: SourceFile): Draft[] {
         preconditions: ["The pending intent is handed to code outside the application and mutability is not required."],
         why: "Immutable pending intents prevent other apps from filling in unspecified fields.",
         recommendation: "Add FLAG_IMMUTABLE unless this intent must be mutated by a trusted framework API.",
-        recipe: "manual",
+        recipe: "automatic",
         masvs: ["MASVS-PLATFORM"],
         fingerprintSource: "pending-intent",
+      }),
+    );
+  }
+
+  for (const match of matchesIn(text, /SSLContext\.getInstance\(\s*"(?:SSL|SSLv3|TLSv1|TLSv1\.1)"\s*\)/g)) {
+    found.push(
+      draft({
+        ruleId: "NETWORK-WEAK-TLS",
+        title: "TLS client requests an obsolete protocol",
+        language,
+        path: file.path,
+        line: match.line,
+        severity: "P1",
+        confidence: "high",
+        category: "network",
+        detectionMethods: ["pattern"],
+        evidence: [evidence(file.path, match.line, "SSLContext.getInstance requests SSL or TLS 1.0/1.1.")],
+        attackScenario: "Connections made with this context can use a protocol that current clients no longer accept.",
+        preconditions: ["This context is used for the application's network connections."],
+        why: "SSL, SSLv3, TLS 1.0, and TLS 1.1 are obsolete.",
+        recommendation: "Use the platform default TLS context, which negotiates TLS 1.2 or newer.",
+        recipe: "manual",
+        masvs: [],
+        fingerprintSource: match.snippet,
+      }),
+    );
+  }
+
+  for (const match of matchesIn(text, /Intent\.parseUri\s*\([^)]*URI_(?:ALLOW_UNSAFE|INTENT_SCHEME)/g)) {
+    found.push(
+      draft({
+        ruleId: "PLATFORM-PARSE-URI",
+        title: "Intent.parseUri allows an unsafe intent URI",
+        language,
+        path: file.path,
+        line: match.line,
+        severity: "P1",
+        confidence: "high",
+        category: "platform",
+        detectionMethods: ["pattern"],
+        evidence: [evidence(file.path, match.line, "Intent.parseUri is called with URI_ALLOW_UNSAFE or URI_INTENT_SCHEME.")],
+        attackScenario: "A crafted intent URI can select a component or extra inside this application's privileges.",
+        preconditions: ["The URI text comes from outside the application."],
+        why: "Those flags restore intent fields that Android otherwise strips from a URI.",
+        recommendation: "Parse only the data you expect. Do not pass URI_ALLOW_UNSAFE or URI_INTENT_SCHEME on untrusted text.",
+        recipe: "manual",
+        masvs: [],
+        fingerprintSource: "parse-uri",
+      }),
+    );
+  }
+
+  for (const match of matchesIn(text, /DexClassLoader\s*\(/g)) {
+    found.push(
+      draft({
+        ruleId: "CODE-DYNAMIC-LOAD",
+        title: "DexClassLoader loads bytecode at runtime",
+        language,
+        path: file.path,
+        line: match.line,
+        severity: "P1",
+        confidence: "high",
+        category: "injection",
+        detectionMethods: ["pattern"],
+        evidence: [evidence(file.path, match.line, "DexClassLoader is constructed.")],
+        attackScenario: "Code loaded from a path outside the signed APK runs with this application's identity.",
+        preconditions: ["The dex path can point at bytes the application did not ship."],
+        why: "Dynamic dex loading moves execution outside the code reviewed in the APK.",
+        recommendation: "Ship the code inside the application. Do not load dex from storage or from a downloaded file.",
+        recipe: "manual",
+        masvs: [],
+        fingerprintSource: "dex-class-loader",
+      }),
+    );
+  }
+
+  for (const match of matchesIn(text, /setSafeBrowsingEnabled\s*\(\s*false\s*\)/g)) {
+    found.push(
+      draft({
+        ruleId: "WEBVIEW-SAFE-BROWSING",
+        title: "WebView safe browsing is disabled",
+        language,
+        path: file.path,
+        line: match.line,
+        severity: "P2",
+        confidence: "high",
+        category: "webview",
+        detectionMethods: ["pattern"],
+        evidence: [evidence(file.path, match.line, "setSafeBrowsingEnabled(false) is called.")],
+        attackScenario: "The WebView will not use the platform check that blocks known harmful sites.",
+        preconditions: ["This WebView loads pages that are not a fixed allowlist."],
+        why: "Safe browsing is a platform control for web content. Turning it off removes that check.",
+        recommendation: "Leave safe browsing enabled. Restrict the WebView to expected https hosts.",
+        recipe: "manual",
+        masvs: [],
+        fingerprintSource: "safe-browsing-off",
       }),
     );
   }
@@ -1054,6 +1151,7 @@ function scanGradle(file: SourceFile): Draft[] {
       }),
     );
   }
+  found.push(...dependencyFindings(file));
   return found;
 }
 
@@ -1081,6 +1179,30 @@ function scanXmlConfig(file: SourceFile): Draft[] {
         recipe: "manual",
         masvs: ["MASVS-NETWORK"],
         fingerprintSource: "user-ca",
+      }),
+    );
+  }
+  if (/<root-path\b|path\s*=\s*"\/"/.test(file.text) && /<paths\b/.test(file.text)) {
+    const line = lineAt(file.text, file.text.search(/<root-path\b|path\s*=\s*"\/"/));
+    found.push(
+      draft({
+        ruleId: "STORAGE-PROVIDER-PATH",
+        title: "FileProvider exposes a broad filesystem path",
+        language: "xml",
+        path: file.path,
+        line,
+        severity: "P1",
+        confidence: "high",
+        category: "storage",
+        detectionMethods: ["config"],
+        evidence: [evidence(file.path, line, "A provider path is root-path or an unrestricted path.")],
+        attackScenario: "A granted content URI can address files outside the directory the provider was meant to share.",
+        preconditions: ["A component grants this provider's URIs to another app."],
+        why: "root-path and a root path attribute remove the directory limit.",
+        recommendation: "Share one app-specific directory. Remove root-path and do not set path to the filesystem root.",
+        recipe: "manual",
+        masvs: [],
+        fingerprintSource: "provider-root",
       }),
     );
   }
@@ -1113,6 +1235,30 @@ function scanXmlConfig(file: SourceFile): Draft[] {
 
 function scanManifestPolicy(file: SourceFile): Draft[] {
   const found: Draft[] = [];
+  if (/android:sharedUserId\s*=\s*"/.test(file.text)) {
+    const line = lineAt(file.text, file.text.search(/android:sharedUserId/));
+    found.push(
+      draft({
+        ruleId: "PLATFORM-SHARED-USER-ID",
+        title: "Application sets a shared user id",
+        language: "xml",
+        path: file.path,
+        line,
+        severity: "P2",
+        confidence: "high",
+        category: "platform",
+        detectionMethods: ["config"],
+        evidence: [evidence(file.path, line, "android:sharedUserId is set.")],
+        attackScenario: "Every app signed into this shared user can read this app's private data.",
+        preconditions: ["Another package is installed with the same shared user id and a compatible signature."],
+        why: "sharedUserId merges private storage across packages. The attribute is obsolete.",
+        recommendation: "Remove sharedUserId. Share data through an explicit, permissioned provider.",
+        recipe: "manual",
+        masvs: [],
+        fingerprintSource: "shared-user-id",
+      }),
+    );
+  }
   if (/android:requestLegacyExternalStorage\s*=\s*"true"/.test(file.text)) {
     const line = lineAt(file.text, file.text.search(/requestLegacyExternalStorage/));
     found.push(
@@ -1207,7 +1353,7 @@ function manifestDrafts(file: SourceFile, files: SourceFile[]): Draft[] {
         preconditions: ["A build type does not override this attribute to false for the artifact under review."],
         why: "The manifest explicitly requests a debug runtime.",
         recommendation: "Remove android:debuggable from the manifest and set it only on the debug build type.",
-        recipe: "manual",
+        recipe: "automatic",
         masvs: ["MASVS-RESILIENCE"],
         fingerprintSource: "manifest-debuggable",
       }),
@@ -1231,7 +1377,7 @@ function manifestDrafts(file: SourceFile, files: SourceFile[]): Draft[] {
         preconditions: ["No data extraction rules exclude sensitive files, and the app stores secrets in backed-up locations."],
         why: "Full backup copies application data unless extraction rules narrow it.",
         recommendation: "Review backup contents. Exclude credential stores, or disable backup if the product does not need it.",
-        recipe: "manual",
+        recipe: "automatic",
         masvs: ["MASVS-STORAGE"],
         fingerprintSource: "allow-backup",
       }),
@@ -1367,6 +1513,7 @@ export function findingsForFile(file: SourceFile, files: SourceFile[]): Draft[] 
     ...scanScript(file),
     ...scanGradle(file),
     ...scanXmlConfig(file),
+    ...(file.path.endsWith("package.json") ? dependencyFindings(file) : []),
   ];
 }
 

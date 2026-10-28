@@ -1,4 +1,5 @@
 import { evaluateRepository } from "./analysis.ts";
+import { readSourcePage } from "./source.ts";
 import { collectExternalFindings, mergeExternal } from "./engines.ts";
 import { saveScan, acceptException, acceptStaged, loadStore, recordInvestigation, rejectStaged, stageFix, verifyStaged } from "./store.ts";
 import { judgeFinding, triageRepository } from "./triage.ts";
@@ -20,6 +21,7 @@ export interface ActionRequest {
   severity?: string;
   masvs?: string;
   decision?: string;
+  page?: string;
 }
 
 export interface ActionResult {
@@ -40,6 +42,7 @@ const PROCEDURE = [
   "8. partial verification means the static check cleared and the build was not run. Do not call that a pass.",
   "9. Record an extra finding with the record action only when you can name a real file and line. It stays medium confidence and cannot be P0.",
   "10. Report only findings the verifier upheld. Withheld findings are candidates, not vulnerabilities. Spawn android-verifier before telling the developer something is vulnerable.",
+  "11. Before that report, call action read from page 1 until the last source page. Read the Kotlin, Java, Dart, JavaScript, TypeScript, manifest, and Gradle text yourself. Record a weak practice on a real line the rules missed.",
 ].join("\n");
 
 function bySeverity(findings: Finding[]): Finding[] {
@@ -142,6 +145,11 @@ export function runSecureDroid(request: ActionRequest): ActionResult {
       triageRepository(root);
       const stored = loadStore(root);
       return { ok: true, text: reportFindings(stored.findings), data: stored };
+    }
+
+    if (request.action === "read") {
+      const page = Number.parseInt(request.page ?? request.line ?? "1", 10);
+      return { ok: true, text: readSourcePage(root, page) };
     }
 
     if (request.action === "record") {

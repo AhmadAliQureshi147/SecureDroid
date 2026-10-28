@@ -5,7 +5,7 @@ import { collectFiles, toFinding } from "./analysis.ts";
 import { languageOf } from "./detect.ts";
 import { ruleStillMatches } from "./rules.ts";
 import { STANDARDS, requirementIds } from "./standards.ts";
-import { resolveTool } from "./tools.ts";
+import { resolveTool, toolEnv } from "./tools.ts";
 import type { Category, Finding, SourceFile } from "./types.ts";
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -60,8 +60,9 @@ export function mergeExternal(primary: Finding[], extra: Finding[]): Finding[] {
 function runPack(findings: Finding[], engine: "semgrep" | "ast-grep", binary: string, args: string[], projectRoot: string, files: SourceFile[]): string {
   const result = spawnSync(binary, args, {
     encoding: "utf8",
-    timeout: 20_000,
-    env: { ...process.env, SEMGREP_SEND_METRICS: "off" },
+    timeout: 45_000,
+    killSignal: "SIGKILL",
+    env: toolEnv(),
   });
   const stdout = result.stdout ?? "";
   if (!stdout.trim()) return `${engine} did not return results. The built-in rules still ran.`;
@@ -69,8 +70,47 @@ function runPack(findings: Finding[], engine: "semgrep" | "ast-grep", binary: st
   const kept = confirmHits(hits, projectRoot, files, engine);
   findings.push(...kept);
   const dropped = hits.length - kept.length;
-  return `${engine}: ${kept.length} confirmed, ${dropped} dropped because the built-in rule did not match that file.`;
+  return `${engine}: ${kept.length} confirmed, ${dropped} dropped because the source line did not show the pattern.`;
 }
+
+const LINE_PATTERNS: Record<string, RegExp> = {
+  "STORAGE-WORLD-ACCESSIBLE": /MODE_WORLD_(?:READABLE|WRITEABLE)/,
+  "NETWORK-SSL-ERROR-PROCEED": /proceed\s*\(/,
+  "CRYPTO-ECB": /ECB/,
+  "CRYPTO-WEAK-ALGORITHM": /(?:DESede|DES|RC2|RC4|Blowfish|PBEWithMD5)/,
+  "WEBVIEW-DEBUG": /setWebContentsDebuggingEnabled\s*\(\s*true\s*\)/,
+  "FLUTTER-BAD-CERTIFICATE": /badCertificateCallback[\s\S]{0,120}true/,
+  "NETWORK-MIXED-CONTENT": /MIXED_CONTENT_ALWAYS_ALLOW/,
+  "PLATFORM-MUTABLE-PENDING-INTENT": /PendingIntent\.get(?:Activity|Service|Broadcast)/,
+  "NETWORK-WEAK-TLS": /SSLContext\.getInstance\(\s*"(?:SSL|SSLv3|TLSv1|TLSv1\.1)"/,
+  "PLATFORM-PARSE-URI": /URI_(?:ALLOW_UNSAFE|INTENT_SCHEME)/,
+  "CODE-DYNAMIC-LOAD": /DexClassLoader\s*\(/,
+  "WEBVIEW-SAFE-BROWSING": /setSafeBrowsingEnabled\s*\(\s*false\s*\)/,
+  "STORAGE-PROVIDER-PATH": /<root-path\b|path\s*=\s*"\/"/,
+  "PLATFORM-SHARED-USER-ID": /android:sharedUserId\s*=/,
+};
+
+export function lineConfirms(ruleId: string, file: SourceFile, line: number): boolean {
+  if (ruleId === "NETWORK-TRUST-ALL") return emptyTrustBody(file.text, line);
+  if (ruleId === "WEBVIEW-DEBUG") {
+    const at = file.text.search(/setWebContentsDebuggingEnabled\s*\(\s*true\s*\)/);
+    if (at >= 0 && /BuildConfig\.DEBUG/.test(file.text.slice(Math.max(0, at - 160), at))) return false;
+  }
+  const pattern = LINE_PATTERNS[ruleId];
+  if (!pattern) return false;
+  const rows = file.text.split(/\r?\n/);
+  return pattern.test(rows.slice(Math.max(0, line - 3), line + 3).join("\n"));
+}
+
+function emptyTrustBody(text: string, line: number): boolean {
+  const rows = text.split(/\r?\n/);
+  const slice = rows.slice(Math.max(0, line - 6), line + 8).join("\n");
+  const match = /checkServerTrusted\s*\([^)]*\)\s*\{([^{}]*)\}/.exec(slice);
+  if (!match) return false;
+  const body = (match[1] ?? "").replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "").trim();
+  return body.length === 0;
+}
+
 
 function confirmHits(hits: ToolHit[], projectRoot: string, files: SourceFile[], engine: "semgrep" | "ast-grep"): Finding[] {
   const now = new Date().toISOString();
@@ -79,7 +119,9 @@ function confirmHits(hits: ToolHit[], projectRoot: string, files: SourceFile[], 
     const relative = projectPath(projectRoot, hit.path);
     if (!relative) continue;
     const file = files.find((item) => item.path === relative);
-    if (!file || !ruleStillMatches(hit.ruleId, file, files)) continue;
+    const builtin = Boolean(file && ruleStillMatches(hit.ruleId, file, files));
+    const extra = Boolean(file && !builtin && lineConfirms(hit.ruleId, file, hit.line));
+    if (!file || (!builtin && !extra)) continue;
     findings.push(
       toFinding(
         {
@@ -92,7 +134,7 @@ function confirmHits(hits: ToolHit[], projectRoot: string, files: SourceFile[], 
           confidence: "medium",
           category: categoryFor(hit.ruleId),
           detectionMethods: ["pattern"],
-          evidence: [{ path: relative, line: hit.line, description: `${engine} matched this rule, and the built-in rule still matches the file.` }],
+          evidence: [{ path: relative, line: hit.line, description: builtin ? `${engine} matched this rule, and the built-in rule still matches the file.` : `${engine} matched this line. The built-in file check missed it, and the line still shows the pattern.` }],
           attackScenario: "An open-source rule matched this source line. The built-in rule agrees the file still contains the issue.",
           preconditions: ["The matched code is part of the app that ships."],
           why: hit.message || STANDARDS[hit.ruleId]?.summary || "An external Android rule matched.",
