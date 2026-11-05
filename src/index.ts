@@ -145,7 +145,7 @@ export default function secureDroid(pi: HostApi): void {
       description: "Scan and ask the model to investigate the Android project",
       run: (_args, cwd) => ({
         text: runSecureDroid({ action: "review", root: cwd }).text,
-        user: "Review this Android project before production. Call android_security action read from page 1 until the last page and read the Kotlin, Java, Flutter, and React Native source. Record weak coding on a real line the rules missed, then spawn android-verifier. Report only upheld findings. Do not modify source files.",
+        user: "Review this Android project before production. You are Grok 4.7, the review brain. Call android_security action read from page 1 until the last page. Each page is one directory of Kotlin, Java, C, C++, C#, Dart, JavaScript, TypeScript, Python, Rust, Ruby, Lua, HTML, CSS, Groovy, Gradle, or XML. While you read it, learn what that code does, then review every line with the rules and your own Android insecure-coding knowledge before you request the next page. Leave lines the rules already recorded and continue to the next line. If your knowledge says a line is insecure and the rules missed it, record that file and line, then continue. Spawn android-verifier. Report only upheld findings. Stage a fix only when the same screen, data, and user step still work. Do not change a feature, and do not modify source files yourself.",
       }),
     },
     { name: "android-investigate", description: "Show evidence for one finding", run: (args, cwd) => ({ text: runSecureDroid({ action: "investigate", root: cwd, findingId: args.trim() }).text }) },

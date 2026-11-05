@@ -6,10 +6,13 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { evaluate, evaluateRepository } from "../src/analysis.ts";
+import { brainStatus } from "../src/brain.ts";
 import { runSecureDroid } from "../src/engine.ts";
 import { guardToolCall } from "../src/guard.ts";
 import secureDroid from "../src/index.ts";
 import { findingsFromAstGrep, findingsFromSemgrep } from "../src/engines.ts";
+import { summarizeGraphPath } from "../src/graphify.ts";
+import { linksForDirectory } from "../src/source.ts";
 import { checkFileSyntax } from "../src/syntax.ts";
 import { proposePatch, reviewChange } from "../src/patch.ts";
 import { MASVS_REQUIREMENTS, STANDARDS, UNMAPPED_REQUIREMENTS } from "../src/standards.ts";
@@ -65,6 +68,12 @@ test("detects native, compose, flutter, and react native projects", () => {
   assert.ok(native.detection.frameworks.includes("native-android"));
   assert.ok(native.detection.languages.includes("kotlin"));
   assert.ok(native.detection.languages.includes("java"));
+  for (const language of ["cpp", "csharp", "python", "rust", "ruby", "lua", "html", "css", "groovy"]) {
+    assert.ok(native.detection.languages.includes(language), language);
+  }
+  const brain = brainStatus();
+  assert.match(brain, /grok-4\.7/);
+  assert.doesNotMatch(brain, /crsr_/);
 
   const compose = evaluateRepository(path.join(fixtures, "compose"));
   assert.ok(compose.detection.frameworks.includes("compose"));
@@ -214,6 +223,65 @@ test("debug-guarded WebView debugging and checked zip paths are not findings", (
   ]);
   assert.equal(guarded.findings.some((finding) => finding.ruleId === "WEBVIEW-DEBUG"), false);
   assert.equal(guarded.findings.some((finding) => finding.ruleId === "INJECTION-ZIP-SLIP"), false);
+});
+
+test("added Android rules catch the insecure call and leave the safe call", () => {
+  const hit = evaluate([
+    {
+      path: "app/src/main/java/example/More.kt",
+      text: [
+        "fun risky(intent: android.content.Intent) {",
+        "  javax.crypto.Cipher.getInstance(\"AES\")",
+        "  createPackageContext(\"com.other.app\", CONTEXT_INCLUDE_CODE)",
+        "  System.load(intent.getStringExtra(\"native\"))",
+        "  java.security.SecureRandom().setSeed(7)",
+        "  okhttp3.logging.HttpLoggingInterceptor().setLevel(okhttp3.logging.HttpLoggingInterceptor.Level.BODY)",
+        "  ssl.setEnabledProtocols(arrayOf(\"TLSv1\"))",
+        "}",
+      ].join("\n"),
+    },
+    {
+      path: "app/src/main/AndroidManifest.xml",
+      text: `<manifest><application><activity android:name=".Other" android:exported="false" android:allowTaskReparenting="true" /></application></manifest>`,
+    },
+  ]);
+  for (const ruleId of ["CRYPTO-ECB", "CODE-PACKAGE-CONTEXT", "CODE-NATIVE-LOAD", "CRYPTO-STATIC-SEED", "PRIVACY-HTTP-BODY", "NETWORK-WEAK-TLS", "PLATFORM-TASK-REPARENT"]) {
+    assert.equal(hit.findings.some((finding) => finding.ruleId === ruleId), true, ruleId);
+  }
+  const safe = evaluate([
+    {
+      path: "app/src/main/java/example/SafeMore.kt",
+      text: [
+        "fun fine() {",
+        "  javax.crypto.Cipher.getInstance(\"AES/GCM/NoPadding\")",
+        "  System.loadLibrary(\"sqlcipher\")",
+        "  java.util.Random().setSeed(1)",
+        "  if (BuildConfig.DEBUG) logger.setLevel(okhttp3.logging.HttpLoggingInterceptor.Level.BODY)",
+        "  ssl.setEnabledProtocols(arrayOf(\"TLSv1.2\", \"TLSv1.3\"))",
+        "}",
+      ].join("\n"),
+    },
+  ]);
+  for (const ruleId of ["CRYPTO-ECB", "CODE-NATIVE-LOAD", "CRYPTO-STATIC-SEED", "PRIVACY-HTTP-BODY", "NETWORK-WEAK-TLS"]) {
+    assert.equal(safe.findings.some((finding) => finding.ruleId === ruleId), false, ruleId);
+  }
+  const polyglot = evaluate([
+    { path: "app/src/main/cpp/unsafe.cpp", text: "void copy(char *d, const char *s) {\n  strcpy(d, s);\n  system(s);\n}\n" },
+    { path: "app/src/main/csharp/Trust.cs", text: "handler.ServerCertificateCustomValidationCallback = (a, b, c, d) => true;\n" },
+    { path: "app/src/main/python/net.py", text: "requests.get(url, verify=False)\npickle.loads(blob)\n" },
+    { path: "app/src/main/rust/tls.rs", text: "builder.danger_accept_invalid_certs(true)\n" },
+    { path: "app/src/main/ruby/tls.rb", text: "OpenSSL::SSL::VERIFY_NONE\n" },
+    { path: "app/src/main/lua/game.lua", text: "os.execute(cmd)\n" },
+  ]);
+  for (const ruleId of ["CODE-NATIVE-UNSAFE", "CODE-NATIVE-EXEC", "NETWORK-DOTNET-TRUST-ALL", "NETWORK-PYTHON-UNVERIFIED", "CODE-PYTHON-PICKLE", "NETWORK-RUST-INVALID-CERTS", "NETWORK-RUBY-VERIFY-NONE", "CODE-LUA-DYNAMIC"]) {
+    assert.equal(polyglot.findings.some((finding) => finding.ruleId === ruleId), true, ruleId);
+  }
+  const held = evaluate([
+    { path: "app/src/main/cpp/safe.cpp", text: "void copy(char *d, const char *s, size_t n) {\n  snprintf(d, n, \"%s\", s);\n}\n" },
+    { path: "app/src/main/python/safe.py", text: "requests.get(url, verify=True)\n" },
+    { path: "app/src/main/rust/safe.rs", text: "builder.danger_accept_invalid_certs(false)\n" },
+  ]);
+  assert.equal(held.findings.some((finding) => finding.ruleId.startsWith("CODE-NATIVE") || finding.ruleId.startsWith("NETWORK-PYTHON") || finding.ruleId.startsWith("NETWORK-RUST")), false);
 });
 
 test("javascript enabled and a protected broadcast are not confirmed vulnerabilities", () => {
@@ -833,6 +901,31 @@ test("the model can pin a finding to a real line, and remediate stages without w
   assert.match(runSecureDroid({ action: "status", root: app }).text, /staged/);
 });
 
+test("a directory read can show the code-map link beside the source", () => {
+  const text = linksForDirectory(
+    {
+      nodes: [
+        { id: "home", label: "Home", source_file: "app/Home.kt" },
+        { id: "trust", label: "TrustAll", source_file: "app/Trust.kt" },
+      ],
+      edges: [{ source: "home", target: "trust", relation: "calls", confidence: "EXTRACTED", source_file: "app/Home.kt" }],
+    },
+    "app",
+  );
+  assert.match(text, /Home calls TrustAll \[EXTRACTED\]/);
+});
+
+test("a graph path with an inferred hop stays unconfirmed", () => {
+  const inferred = summarizeGraphPath(
+    "Shortest path (2 hops):\n  MainActivity --method [EXTRACTED]--> .onCreate() --calls [INFERRED 0.85]--> InsecurePractices\nPath confidence: INFERRED",
+  );
+  assert.equal(inferred.confidence, "inferred");
+  const extracted = summarizeGraphPath("Shortest path (1 hops):\n  MainActivity --calls [EXTRACTED]--> Helper\nPath confidence: EXTRACTED");
+  assert.equal(extracted.confidence, "extracted");
+  const missing = summarizeGraphPath("No directed path found between 'MainActivity' and 'TrustAll'.");
+  assert.equal(missing.confidence, "none");
+});
+
 test("source read shows Kotlin, Dart, and React Native code before the review finishes", () => {
   const root = project();
   write(root, "app/src/main/AndroidManifest.xml", "<manifest></manifest>\n");
@@ -851,6 +944,9 @@ test("source read shows Kotlin, Dart, and React Native code before the review fi
   assert.match(all, /markerReact/);
   assert.match(all, /<redacted>/);
   assert.doesNotMatch(all, /super-secret-value/);
+  assert.match(first.text, /review them for insecure Android coding/);
+  assert.match(first.text, /before the next page/);
+  assert.match(first.text, /continue to the next line/);
   assert.match(shown.at(-1) ?? "", /last page/);
   const done = runSecureDroid({ action: "read", root, page: "99" });
   assert.match(done.text, /past the end/);

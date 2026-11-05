@@ -26,7 +26,7 @@
             android:name=".ProtectedActivity"
             android:exported="true"
             android:permission="com.example.secure.PERMISSION" />
-        <activity android:name=".ImplicitShare">
+        <activity android:name=".ImplicitShare" android:allowTaskReparenting="true">
             <intent-filter>
                 <action android:name="com.example.secure.SHARE" />
             </intent-filter>

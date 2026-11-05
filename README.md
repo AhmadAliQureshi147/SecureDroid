@@ -19,8 +19,10 @@ Android Studio does not need to be open. Point the commands below at the project
 - Open-source scanners. Semgrep and ast-grep run when installed. A match is kept only when it names a SecureDroid rule and the built-in rule still matches that file.
 - Write guard. The session blocks new trust-all certificate checks, allow-all hostname verifiers, ignored TLS errors, world-readable file modes, and universal WebView file access.
 - Secret redaction, path confinement, and fingerprint-scoped exceptions. An exception expires when the evidence changes.
-- Insecure-coding pass for obsolete TLS, unsafe `Intent.parseUri`, `DexClassLoader`, WebView safe browsing turned off, FileProvider root paths, `sharedUserId`, and world-readable `setReadable`. The model reads the runtime field for each and can record a variant the rules missed.
-- Source read. `/android-review` and `android_security` action `read` show the project source, page by page, for Kotlin, Java, Flutter/Dart, React Native, manifests, and Gradle. The review is not finished until the last page. Secrets in assignments are redacted. The model still has to record a real line.
+- Insecure-coding pass for obsolete TLS, `setEnabledProtocols` with SSL or TLS 1.0/1.1, unsafe `Intent.parseUri`, dex class loaders, `CONTEXT_IGNORE_SECURITY`, `CONTEXT_INCLUDE_CODE`, `System.load`, a fixed `SecureRandom` seed, `Cipher.getInstance("AES")`, HTTP body logging, WebView safe browsing turned off, FileProvider root paths, `sharedUserId`, `allowTaskReparenting`, and world-readable file modes including numeric `openFileOutput` modes. The model reads the runtime field for each and records a variant the rules missed.
+- Review brain. The configured model is Grok 4.7. Put the Cursor API key in the gitignored `.env` file as `CURSOR_API_KEY`. `npm run omp` loads that file. The key is not written into source, findings, or this README.
+- Source read. `/android-review` and `android_security` action `read` show the project source, page by page, for Kotlin, Java, C, C++, C#, Dart, JavaScript, TypeScript, Python, Rust, Ruby, Lua, HTML, CSS, Groovy, Gradle Kotlin DSL, and XML. Each page lists the lines the rules already recorded. The model learns what that directory does, reviews every other line, records a miss, and continues to the next line. A staged fix has to keep the same screen, data, and user step. The review is not finished until the last page. Secrets in assignments are redacted.
+- Code map. When `graphify` is installed, `/android-review` builds a local map of calls and imports before the model judges a line. An EXTRACTED path names the files to read. An INFERRED path stays unconfirmed. The map does not decide a vulnerability and does not edit source.
 
 The launcher activity, a WebView with JavaScript enabled, and ordinary Compose state are not findings by themselves.
 
@@ -91,6 +93,12 @@ python3 -m pip install semgrep
 ```
 
 `@ast-grep/cli` is a dev dependency. Semgrep is also detected at `.tools/venv/bin/semgrep` when that virtualenv exists. A missing scanner is reported as unavailable. It is not treated as a pass.
+
+The code map is optional. Install the `graphify` command, or the local virtualenv `.tools/graphify-venv`, and `/android-review` will build it with `GRAPHIFY_BACKEND=none` so the code is parsed locally:
+
+```bash
+uv tool install graphifyy
+```
 
 ### Run the agent
 

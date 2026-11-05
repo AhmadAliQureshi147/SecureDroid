@@ -1,4 +1,6 @@
 import { evaluateRepository } from "./analysis.ts";
+import { brainStatus } from "./brain.ts";
+import { graphContext } from "./graphify.ts";
 import { readSourcePage } from "./source.ts";
 import { collectExternalFindings, mergeExternal } from "./engines.ts";
 import { saveScan, acceptException, acceptStaged, loadStore, recordInvestigation, rejectStaged, stageFix, verifyStaged } from "./store.ts";
@@ -37,12 +39,12 @@ const PROCEDURE = [
   "3. Read the evidence paths. A suspicious API is not a vulnerability until the surrounding code fails to constrain it.",
   "4. JavaScript enabled on a WebView, Compose state, and a launcher activity are not findings by themselves.",
   "5. Read each finding's runtime field before describing what a running app exposes. Do not write exploit steps.",
-  "6. Stage a fix with the fix action, or stage every automatic recipe with remediate. Do not write the source file yourself.",
+  "6. Before a fix, read the callers and state what the feature does. Stage a fix with the fix action, or stage every automatic recipe with remediate, only when that feature still does the same work. Do not write the source file yourself.",
   "7. The developer accepts or rejects each staged patch. remediate does not accept anything.",
   "8. partial verification means the static check cleared and the build was not run. Do not call that a pass.",
   "9. Record an extra finding with the record action only when you can name a real file and line. It stays medium confidence and cannot be P0.",
   "10. Report only findings the verifier upheld. Withheld findings are candidates, not vulnerabilities. Spawn android-verifier before telling the developer something is vulnerable.",
-  "11. Before that report, call action read from page 1 until the last source page. Read the Kotlin, Java, Dart, JavaScript, TypeScript, manifest, and Gradle text yourself. Record a weak practice on a real line the rules missed.",
+  "11. Before that report, call action read from page 1 until the last source page. On each page, review every line with the rules and your own Android insecure-coding knowledge. Leave lines the rules already recorded. If you judge a missed line insecure, record it, then continue to the next line.",
 ].join("\n");
 
 function bySeverity(findings: Finding[]): Finding[] {
@@ -111,6 +113,7 @@ export function runSecureDroid(request: ActionRequest): ActionResult {
       const evaluated = evaluateRepository(root);
       const notes = request.action === "scan" || request.action === "review" ? persistScan(root, evaluated.findings) : [];
       const header = [
+        brainStatus(),
         `Android project: ${evaluated.detection.isAndroid ? "yes" : "no"}`,
         `Frameworks: ${evaluated.detection.frameworks.join(", ") || "none"}`,
         `Languages: ${evaluated.detection.languages.join(", ") || "none"}`,
@@ -136,7 +139,8 @@ export function runSecureDroid(request: ActionRequest): ActionResult {
       const stored = request.action === "scan" || request.action === "review" ? triageRepository(root) : loadStore(root).findings;
       const body = `${header.join("\n")}\n${reportFindings(stored)}`;
       if (request.action === "review") {
-        return { ok: true, text: `${PROCEDURE}\n\n${body}`, data: { findings: stored, procedure: PROCEDURE } };
+        const graph = graphContext(root, stored, evaluated.map.entryPoints);
+        return { ok: true, text: `${PROCEDURE}\n\n${body}\n\n${graph}`, data: { findings: stored, procedure: PROCEDURE } };
       }
       return { ok: true, text: body, data: stored };
     }

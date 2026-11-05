@@ -1,18 +1,36 @@
 import { spawnSync } from "node:child_process";
+import { graphifyInstalled } from "./graphify.ts";
 import { resolveTool } from "./tools.ts";
 import type { Detection, Language, SourceFile } from "./types.ts";
 
 const SOURCE_EXTENSIONS = new Set([
   ".kt",
   ".java",
+  ".c",
+  ".cc",
+  ".cpp",
+  ".cxx",
+  ".h",
+  ".hh",
+  ".hpp",
+  ".hxx",
+  ".cs",
   ".xml",
   ".gradle",
   ".kts",
+  ".groovy",
   ".dart",
   ".js",
   ".jsx",
   ".ts",
   ".tsx",
+  ".py",
+  ".rs",
+  ".rb",
+  ".lua",
+  ".html",
+  ".htm",
+  ".css",
   ".yaml",
   ".yml",
   ".toml",
@@ -20,13 +38,23 @@ const SOURCE_EXTENSIONS = new Set([
 ]);
 
 export function languageOf(filePath: string): Language | undefined {
+  if (filePath.endsWith(".gradle.kts") || filePath.endsWith(".gradle")) return "gradle";
+  if (filePath.endsWith(".groovy")) return "groovy";
   if (filePath.endsWith(".kt") || filePath.endsWith(".kts")) return "kotlin";
   if (filePath.endsWith(".java")) return "java";
+  if (filePath.endsWith(".c")) return "c";
+  if (/\.(cc|cpp|cxx|h|hh|hpp|hxx)$/.test(filePath)) return "cpp";
+  if (filePath.endsWith(".cs")) return "csharp";
   if (filePath.endsWith(".xml")) return "xml";
-  if (filePath.endsWith(".gradle")) return "gradle";
   if (filePath.endsWith(".dart")) return "dart";
   if (filePath.endsWith(".ts") || filePath.endsWith(".tsx")) return "typescript";
   if (filePath.endsWith(".js") || filePath.endsWith(".jsx")) return "javascript";
+  if (filePath.endsWith(".py")) return "python";
+  if (filePath.endsWith(".rs")) return "rust";
+  if (filePath.endsWith(".rb")) return "ruby";
+  if (filePath.endsWith(".lua")) return "lua";
+  if (filePath.endsWith(".html") || filePath.endsWith(".htm")) return "html";
+  if (filePath.endsWith(".css")) return "css";
   return undefined;
 }
 

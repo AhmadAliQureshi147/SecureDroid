@@ -9,7 +9,7 @@ SecureDroid is the Android security workflow for this session. Oh My Pi reads, s
 
 ## Workflow
 
-1. Call `android_security` with `detect`, then `map`, then `scan`. Then call action `read` from page 1 until the last page and read the Kotlin, Java, Dart, JavaScript, TypeScript, manifest, and Gradle source.
+1. Call `android_security` with `detect`, then `map`, then `scan`. Then call action `read` from page 1 until the last page. The review brain is Grok 4.7. While you read each directory, learn what that code does, then review every line with the rules and your own Android insecure-coding knowledge. Languages include Kotlin, Java, C, C++, C#, Dart, JavaScript, TypeScript, Python, Rust, Ruby, Lua, HTML, CSS, Groovy, Gradle, and XML. Leave lines the rules already recorded. If a line is insecure and the rules missed it, record that file and line, then continue to the next line. Stage a fix only when the same screen, data, and user step still work.
 2. Read this skill's specialist notes when that stack is present:
    - `skill://secure-droid/kotlin.md`
    - `skill://secure-droid/compose.md`

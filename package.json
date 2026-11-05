@@ -1,7 +1,7 @@
 {
   "name": "securedroid",
   "version": "0.1.0",
-  "description": "Android security coding agent extension for Oh My Pi. Evidence-backed findings, staged fixes, and verification for Kotlin, Java, Compose, Flutter, and React Native.",
+  "description": "Android security coding agent extension for Oh My Pi. Evidence-backed findings, staged fixes, and verification across Kotlin, Java, C, C++, C#, Dart, JavaScript, TypeScript, Python, Rust, Ruby, Lua, HTML, CSS, Groovy, and XML.",
   "type": "module",
   "bin": {
     "securedroid": "./src/cli.ts"

@@ -20,6 +20,13 @@ if [[ ! -d "$ROOT/oh-my-pi/node_modules" ]]; then
   exit 1
 fi
 
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT/.env"
+  set +a
+fi
+
 TARGET="$PWD"
 if [[ $# -gt 0 && -d "$1" ]]; then
   TARGET="$(cd "$1" && pwd)"

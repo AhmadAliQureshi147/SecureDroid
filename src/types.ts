@@ -10,11 +10,21 @@ export type FindingStatus = (typeof STATUSES)[number];
 export type Language =
   | "kotlin"
   | "java"
+  | "c"
+  | "cpp"
+  | "csharp"
   | "xml"
   | "gradle"
+  | "groovy"
   | "dart"
   | "javascript"
-  | "typescript";
+  | "typescript"
+  | "python"
+  | "rust"
+  | "ruby"
+  | "lua"
+  | "html"
+  | "css";
 
 export type Category =
   | "authentication"

@@ -1,5 +1,8 @@
+import fs from "node:fs";
+import path from "node:path";
 import { collectFiles } from "./analysis.ts";
 import { languageOf } from "./detect.ts";
+import { findingsForFile } from "./rules.ts";
 import type { SourceFile } from "./types.ts";
 
 const PAGE_CHARS = 8_000;
@@ -15,26 +18,76 @@ interface Piece {
 export function readSourcePage(root: string, pageNumber: number): string {
   const collected = collectFiles(root);
   const pages = pack(splitFiles(collected.files));
-  if (pages.length === 0) return "No source files were collected. SecureDroid reads Kotlin, Java, Dart, JavaScript, TypeScript, XML, and Gradle.";
+  if (pages.length === 0) return "No source files were collected. SecureDroid reads Kotlin, Java, C, C++, C#, Dart, JavaScript, TypeScript, Python, Rust, Ruby, Lua, HTML, CSS, Groovy, Gradle, and XML.";
   const page = Number.isFinite(pageNumber) && pageNumber > 0 ? Math.floor(pageNumber) : 1;
   if (page > pages.length) {
-    return `Page ${page} is past the end. There are ${pages.length} source pages. Every collected file has been shown.`;
+    return `Page ${page} is past the end. There are ${pages.length} source pages. Every collected directory has been shown.`;
   }
   const current = pages[page - 1] ?? [];
+  const directory = directoryOf(current[0]?.path ?? "");
   const languages = [...new Set(current.map((piece) => piece.language))].join(", ");
   const last = page === pages.length;
+  const nextStep = last
+    ? "This is the last page. Review this directory for insecure Android code before you finish. Every collected directory has been shown."
+    : `Review this directory for insecure Android code before the next page. Then call android_security action read with page "${page + 1}".`;
   return [
-    `Source page ${page} of ${pages.length}. Languages on this page: ${languages}.`,
-    last
-      ? "This is the last page. Every collected source file has been shown. Do not call the review finished before this page."
-      : `Call android_security action read with page "${page + 1}" before you finish the review.`,
+    `Source page ${page} of ${pages.length}. Directory: ${directory}. Languages: ${languages}.`,
+    nextStep,
     collected.truncated ? "Some files were skipped because the project exceeded the file count or the per-file size limit." : "",
-    "Read the code below. This pass is for Kotlin, Java, Jetpack Compose, Flutter/Dart, and React Native JavaScript or TypeScript, plus manifests and Gradle.",
-    "Look for weak Android coding on the lines in front of you: TLS and cleartext, WebView settings, exported components, storage, crypto, secrets, injection, and dynamic code. Record a real line the rules missed. Do not invent a line, and do not write an exploit.",
+    "While you read the lines below, first understand what this directory does in the app. Then review them for insecure Android coding in Kotlin, Java, C, C++, C#, Dart, JavaScript, TypeScript, Python, Rust, Ruby, Lua, HTML, CSS, Groovy, and XML. Use the rules and your own insecure-coding knowledge on every line. The code map is only the wiring.",
+    rulesOnPage(collected.files, current.map((piece) => piece.path)),
+    directoryLinks(root, directory),
+    "Go line by line. If the rules already recorded a line, leave it and continue to the next line. If your Android knowledge says a line is insecure and the rules missed it, call action record for that file and line, then continue to the next line. Do not stop the directory. Do not invent a line, and do not write an exploit.",
+    "A fix is staged for the developer to accept. Do not edit the file. Keep the same screen, data, and user step. If the safe fix would change how the app behaves, leave a recommendation.",
     current.map(formatPiece).join("\n\n"),
   ]
     .filter((line) => line.length > 0)
     .join("\n\n");
+}
+
+export function linksForDirectory(
+  graph: { nodes?: Array<{ id?: string; label?: string; source_file?: string }>; edges?: Array<{ source?: string; target?: string; relation?: string; confidence?: string; source_file?: string }> },
+  directory: string,
+): string {
+  const prefix = directory === "." ? "" : `${directory}/`;
+  const inDir = (file: string | undefined) => (directory === "." ? Boolean(file && !file.includes("/")) : Boolean(file?.startsWith(prefix)));
+  const labels = new Map((graph.nodes ?? []).map((node) => [node.id ?? "", node.label ?? node.id ?? ""]));
+  const lines = (graph.edges ?? [])
+    .filter((edge) => inDir(edge.source_file))
+    .slice(0, 8)
+    .map((edge) => `- ${labels.get(edge.source ?? "") || edge.source} ${edge.relation ?? "links"} ${labels.get(edge.target ?? "") || edge.target} [${edge.confidence ?? "unknown"}]`);
+  if (lines.length === 0) return "Code map for this directory: no links yet. Judge the source itself.";
+  return ["Code map for this directory, read it with the source:", ...lines].join("\n");
+}
+
+function rulesOnPage(files: SourceFile[], pagePaths: string[]): string {
+  const wanted = new Set(pagePaths);
+  const lines = new Set<string>();
+  for (const file of files) {
+    if (!wanted.has(file.path)) continue;
+    for (const finding of findingsForFile(file, files)) {
+      lines.add(`- ${finding.ruleId} ${finding.path}:${finding.line}`);
+    }
+  }
+  const listed = [...lines].slice(0, 12);
+  if (listed.length === 0) return "Rules recorded nothing on this page. Judge every line with your own Android insecure-coding knowledge.";
+  const more = lines.size > listed.length ? "More rule hits exist on this page. Keep going line by line for anything not listed." : "";
+  return ["Rules already recorded these lines. Do not record them again:", ...listed, more].filter((line) => line.length > 0).join("\n");
+}
+
+function directoryOf(filePath: string): string {
+  const directory = path.posix.dirname(filePath);
+  return directory === "." ? "." : directory;
+}
+
+function directoryLinks(root: string, directory: string): string {
+  const graphPath = path.join(root, ".secure-droid", "graphify-out", "graph.json");
+  if (!fs.existsSync(graphPath)) return "Code map for this directory: not built yet. Judge the source with your Android secure-coding knowledge.";
+  try {
+    return linksForDirectory(JSON.parse(fs.readFileSync(graphPath, "utf8")) as Parameters<typeof linksForDirectory>[0], directory);
+  } catch {
+    return "Code map for this directory: unreadable. Judge the source itself.";
+  }
 }
 
 function splitFiles(files: SourceFile[]): Piece[] {
@@ -59,12 +112,16 @@ function pack(pieces: Piece[]): Piece[][] {
   const pages: Piece[][] = [];
   let current: Piece[] = [];
   let size = 0;
+  let directory = "";
   for (const piece of pieces) {
-    if (current.length > 0 && size + piece.text.length > PAGE_CHARS) {
+    const nextDirectory = directoryOf(piece.path);
+    const directoryChanged = current.length > 0 && nextDirectory !== directory;
+    if (current.length > 0 && (directoryChanged || size + piece.text.length > PAGE_CHARS)) {
       pages.push(current);
       current = [];
       size = 0;
     }
+    directory = nextDirectory;
     current.push(piece);
     size += piece.text.length;
   }

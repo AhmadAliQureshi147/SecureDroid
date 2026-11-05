@@ -1,6 +1,8 @@
+.env
 node_modules/
 .tools/
 .secure-droid/
 oh-my-pi/
 samples/
 *.log
+graphify-out/

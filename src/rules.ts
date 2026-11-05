@@ -167,7 +167,7 @@ function scanSource(file: SourceFile): Draft[] {
     );
   }
 
-  for (const match of matchesIn(text, /Cipher\.getInstance\(\s*"([^"]*ECB[^"]*)"/g)) {
+  for (const match of matchesIn(text, /Cipher\.getInstance\(\s*"(?:[^"]*ECB[^"]*|AES)"/g)) {
     found.push(
       draft({
         ruleId: "CRYPTO-ECB",
@@ -179,7 +179,7 @@ function scanSource(file: SourceFile): Draft[] {
         confidence: "high",
         category: "cryptography",
         detectionMethods: ["pattern"],
-        evidence: [evidence(file.path, match.line, "A cipher transformation uses ECB.")],
+        evidence: [evidence(file.path, match.line, /ECB/.test(match.snippet) ? "A cipher transformation uses ECB." : "Cipher.getInstance(\"AES\") uses the platform default, which is ECB.")],
         attackScenario: "Repeated plaintext blocks encrypt to repeated ciphertext, which leaks structure.",
         preconditions: ["The cipher is used on sensitive data."],
         why: "ECB encrypts each block independently.",
@@ -215,33 +215,33 @@ function scanSource(file: SourceFile): Draft[] {
     );
   }
 
-  if (/MessageDigest\.getInstance\(\s*"MD5"\s*\)/.test(text) && /password/i.test(text)) {
-    const match = /MessageDigest\.getInstance\(\s*"MD5"\s*\)/.exec(text);
-    const line = lineAt(text, match?.index ?? 0);
+  for (const match of matchesIn(text, /MessageDigest\.getInstance\(\s*"(MD5|SHA-1|SHA1)"\s*\)/g)) {
+    if (!/password/i.test(text)) continue;
+    const algorithm = /MD5|SHA-1|SHA1/.exec(match.snippet)?.[0] ?? "MD5";
     found.push(
       draft({
         ruleId: "CRYPTO-WEAK-PASSWORD-HASH",
-        title: "Password is hashed with MD5",
+        title: `Password is hashed with ${algorithm}`,
         language,
         path: file.path,
-        line,
+        line: match.line,
         severity: "P1",
         confidence: "high",
         category: "cryptography",
         detectionMethods: ["pattern"],
-        evidence: [evidence(file.path, line, "MD5 is used in a file that handles a password.")],
+        evidence: [evidence(file.path, match.line, `${algorithm} is used in a file that handles a password.`)],
         attackScenario: "Recovered hashes can be reversed with commodity cracking tools much faster than a password hash.",
-        preconditions: ["The MD5 digest is the stored form of a password."],
-        why: "MD5 is not a password hashing function.",
+        preconditions: ["The digest is the stored form of a password."],
+        why: "MD5 and SHA-1 are not password hashing functions.",
         recommendation: "Store passwords with a slow adaptive hash such as PBKDF2, scrypt, or argon2, with a unique salt.",
         recipe: "manual",
         masvs: ["MASVS-CRYPTO"],
-        fingerprintSource: "md5-password",
+        fingerprintSource: `${algorithm}-password`,
       }),
     );
   }
 
-  for (const match of matchesIn(text, /MODE_WORLD_READABLE|MODE_WORLD_WRITEABLE|set(?:Readable|Writable|Executable)\s*\(\s*true\s*,\s*false\s*\)/g)) {
+  for (const match of matchesIn(text, /MODE_WORLD_READABLE|MODE_WORLD_WRITEABLE|set(?:Readable|Writable|Executable)\s*\(\s*true\s*,\s*false\s*\)|openFileOutput\s*\([^,\n]*,\s*[12]\s*\)|getSharedPreferences\s*\([^,\n]*,\s*[12]\s*\)/g)) {
     const sensitive = /password|token|secret|account/i.test(text);
     found.push(
       draft({
@@ -254,7 +254,7 @@ function scanSource(file: SourceFile): Draft[] {
         confidence: "confirmed",
         category: "storage",
         detectionMethods: ["pattern"],
-        evidence: [evidence(file.path, match.line, "MODE_WORLD_READABLE or MODE_WORLD_WRITEABLE is used.")],
+        evidence: [evidence(file.path, match.line, "A world-accessible file mode is used.")],
         attackScenario: "Another application on the device can read or write this file.",
         preconditions: ["The process creates the file with this mode."],
         why: "World-accessible modes ignore Android's per-app storage boundary.",
@@ -494,7 +494,7 @@ function scanSource(file: SourceFile): Draft[] {
     );
   }
 
-  for (const match of matchesIn(text, /SSLContext\.getInstance\(\s*"(?:SSL|SSLv3|TLSv1|TLSv1\.1)"\s*\)/g)) {
+  for (const match of matchesIn(text, /SSLContext\.getInstance\(\s*"(?:SSL|SSLv3|TLSv1|TLSv1\.1)"\s*\)|setEnabledProtocols\s*\([\s\S]{0,160}?(?:SSLv3|SSL|TLSv1\.1|TLSv1)(?![.\w])/g)) {
     found.push(
       draft({
         ruleId: "NETWORK-WEAK-TLS",
@@ -542,11 +542,11 @@ function scanSource(file: SourceFile): Draft[] {
     );
   }
 
-  for (const match of matchesIn(text, /DexClassLoader\s*\(/g)) {
+  for (const match of matchesIn(text, /(?:DexClassLoader|InMemoryDexClassLoader|PathClassLoader|BaseDexClassLoader)\s*\(/g)) {
     found.push(
       draft({
         ruleId: "CODE-DYNAMIC-LOAD",
-        title: "DexClassLoader loads bytecode at runtime",
+        title: "A dex class loader loads bytecode at runtime",
         language,
         path: file.path,
         line: match.line,
@@ -554,7 +554,7 @@ function scanSource(file: SourceFile): Draft[] {
         confidence: "high",
         category: "injection",
         detectionMethods: ["pattern"],
-        evidence: [evidence(file.path, match.line, "DexClassLoader is constructed.")],
+        evidence: [evidence(file.path, match.line, "A dex class loader is constructed.")],
         attackScenario: "Code loaded from a path outside the signed APK runs with this application's identity.",
         preconditions: ["The dex path can point at bytes the application did not ship."],
         why: "Dynamic dex loading moves execution outside the code reviewed in the APK.",
@@ -586,6 +586,106 @@ function scanSource(file: SourceFile): Draft[] {
         recipe: "manual",
         masvs: [],
         fingerprintSource: "safe-browsing-off",
+      }),
+    );
+  }
+
+  for (const match of matchesIn(text, /CONTEXT_IGNORE_SECURITY|CONTEXT_INCLUDE_CODE/g)) {
+    found.push(
+      draft({
+        ruleId: "CODE-PACKAGE-CONTEXT",
+        title: "Package context skips a signature check or loads another app's code",
+        language,
+        path: file.path,
+        line: match.line,
+        severity: "P1",
+        confidence: "high",
+        category: "injection",
+        detectionMethods: ["pattern"],
+        evidence: [evidence(file.path, match.line, "CONTEXT_IGNORE_SECURITY or CONTEXT_INCLUDE_CODE is used.")],
+        attackScenario: "Code from another package can run with this application's identity, or a signature mismatch is ignored.",
+        preconditions: ["The package name can refer to an app this process did not ship."],
+        why: "CONTEXT_IGNORE_SECURITY skips the signature check. CONTEXT_INCLUDE_CODE loads that package's code into this process.",
+        recommendation: "Create a context only for this application. Do not pass CONTEXT_IGNORE_SECURITY or CONTEXT_INCLUDE_CODE.",
+        recipe: "manual",
+        masvs: [],
+        fingerprintSource: `package-context:${match.index}`,
+      }),
+    );
+  }
+
+  for (const match of matchesIn(text, /System\.load\s*\(/g)) {
+    found.push(
+      draft({
+        ruleId: "CODE-NATIVE-LOAD",
+        title: "Native code is loaded from a filesystem path",
+        language,
+        path: file.path,
+        line: match.line,
+        severity: "P1",
+        confidence: "high",
+        category: "injection",
+        detectionMethods: ["pattern"],
+        evidence: [evidence(file.path, match.line, "System.load is called with a path.")],
+        attackScenario: "A native library outside the signed APK runs with this application's identity.",
+        preconditions: ["The path can point at a file the application did not ship."],
+        why: "System.load takes a filesystem path. System.loadLibrary loads a library packaged in the APK.",
+        recommendation: "Load native code with System.loadLibrary from libraries packaged in the APK.",
+        recipe: "manual",
+        masvs: [],
+        fingerprintSource: "system-load",
+      }),
+    );
+  }
+
+  for (const match of matchesIn(text, /\.setSeed\s*\(\s*(?:\d+|["'])/g)) {
+    const window = text.slice(Math.max(0, match.index - 220), match.index + 40);
+    if (!/SecureRandom/.test(window)) continue;
+    found.push(
+      draft({
+        ruleId: "CRYPTO-STATIC-SEED",
+        title: "SecureRandom is seeded from a fixed value",
+        language,
+        path: file.path,
+        line: match.line,
+        severity: "P1",
+        confidence: "high",
+        category: "cryptography",
+        detectionMethods: ["pattern"],
+        evidence: [evidence(file.path, match.line, "SecureRandom.setSeed is called with a literal.")],
+        attackScenario: "Random values drawn after a fixed seed can be repeated by anyone who knows the seed.",
+        preconditions: ["The seeded generator supplies keys, nonces, or tokens."],
+        why: "A fixed seed replaces the platform entropy SecureRandom starts with.",
+        recommendation: "Use SecureRandom without setSeed. Let the platform seed it.",
+        recipe: "manual",
+        masvs: [],
+        fingerprintSource: "secure-random-seed",
+      }),
+    );
+  }
+
+  for (const match of matchesIn(text, /HttpLoggingInterceptor\.Level\.BODY/g)) {
+    const before = text.slice(Math.max(0, match.index - 180), match.index);
+    if (/BuildConfig\.DEBUG/.test(before)) continue;
+    found.push(
+      draft({
+        ruleId: "PRIVACY-HTTP-BODY",
+        title: "HTTP logger records full bodies",
+        language,
+        path: file.path,
+        line: match.line,
+        severity: "P2",
+        confidence: "high",
+        category: "privacy",
+        detectionMethods: ["pattern"],
+        evidence: [evidence(file.path, match.line, "HttpLoggingInterceptor is set to BODY.")],
+        attackScenario: "Request and response bodies, including credentials sent on those calls, are written to the log.",
+        preconditions: ["The interceptor is installed on a client that sends sensitive requests."],
+        why: "BODY logging stores the full HTTP message, not just the URL.",
+        recommendation: "Do not log bodies in release. Limit logging to NONE, or to a debug build that does not send real secrets.",
+        recipe: "manual",
+        masvs: [],
+        fingerprintSource: "http-body-log",
       }),
     );
   }
@@ -1259,6 +1359,30 @@ function scanManifestPolicy(file: SourceFile): Draft[] {
       }),
     );
   }
+  if (/android:allowTaskReparenting\s*=\s*"true"/.test(file.text)) {
+    const line = lineAt(file.text, file.text.search(/android:allowTaskReparenting/));
+    found.push(
+      draft({
+        ruleId: "PLATFORM-TASK-REPARENT",
+        title: "Activity allows another task to reparent it",
+        language: "xml",
+        path: file.path,
+        line,
+        severity: "P2",
+        confidence: "high",
+        category: "platform",
+        detectionMethods: ["config"],
+        evidence: [evidence(file.path, line, "android:allowTaskReparenting is true.")],
+        attackScenario: "Another task can move this activity into its own task while the activity stays enabled.",
+        preconditions: ["The activity can be started by an app other than this one."],
+        why: "allowTaskReparenting lets a different task take this activity.",
+        recommendation: "Leave allowTaskReparenting at its default false.",
+        recipe: "manual",
+        masvs: [],
+        fingerprintSource: "task-reparent",
+      }),
+    );
+  }
   if (/android:requestLegacyExternalStorage\s*=\s*"true"/.test(file.text)) {
     const line = lineAt(file.text, file.text.search(/requestLegacyExternalStorage/));
     found.push(
@@ -1505,6 +1629,151 @@ function manifestDrafts(file: SourceFile, files: SourceFile[]): Draft[] {
   return found;
 }
 
+function commented(snippet: string): boolean {
+  const trimmed = snippet.trim();
+  return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("#") || trimmed.startsWith("--");
+}
+
+function scanPolyglot(file: SourceFile): Draft[] {
+  const language = languageOf(file.path);
+  if (!language) return [];
+  const text = file.text;
+  const found: Draft[] = [];
+  const push = (ruleId: string, title: string, match: { index: number; line: number; snippet: string }, category: Draft["category"], why: string, recommendation: string, evidenceText: string) => {
+    if (commented(match.snippet)) return;
+    found.push(
+      draft({
+        ruleId,
+        title,
+        language,
+        path: file.path,
+        line: match.line,
+        severity: "P1",
+        confidence: "high",
+        category,
+        detectionMethods: ["pattern"],
+        evidence: [evidence(file.path, match.line, evidenceText)],
+        attackScenario: "The insecure call is in the app only when that code runs.",
+        preconditions: ["The recorded call is part of the shipped app."],
+        why,
+        recommendation,
+        recipe: "manual",
+        masvs: [],
+        fingerprintSource: `${ruleId}:${match.index}`,
+      }),
+    );
+  };
+
+  if (language === "c" || language === "cpp") {
+    for (const match of matchesIn(text, /\b(?:gets|strcpy|strcat|sprintf|vsprintf|mktemp)\s*\(/g)) {
+      push(
+        "CODE-NATIVE-UNSAFE",
+        "Native call does not bound its buffer",
+        match,
+        "injection",
+        "gets, strcpy, strcat, sprintf, vsprintf, and mktemp do not limit how much they write.",
+        "Use a bounded call such as snprintf or a C++ string. Keep the same data moving to the same caller.",
+        "An unbounded native copy or formatting call is used.",
+      );
+    }
+    for (const match of matchesIn(text, /\b(?:system|popen)\s*\(/g)) {
+      push(
+        "CODE-NATIVE-EXEC",
+        "Native code starts a shell command",
+        match,
+        "injection",
+        "system and popen pass text to a shell.",
+        "Call the specific program with a fixed argument list. Do not build a shell string. Keep the same task the user started.",
+        "system or popen is called.",
+      );
+    }
+  }
+
+  if (language === "csharp" && /ServerCertificate(?:CustomValidationCallback|ValidationCallback)/.test(text) && /return\s+true|=>\s*true/.test(text)) {
+    const match = matchesIn(text, /ServerCertificate(?:CustomValidationCallback|ValidationCallback)/g)[0];
+    if (match) {
+      push(
+        "NETWORK-DOTNET-TRUST-ALL",
+        ".NET HTTP handler accepts any certificate",
+        match,
+        "network",
+        "A certificate callback that returns true accepts every server certificate.",
+        "Delete the callback and use the platform trust decision. Keep the same request and response handling.",
+        "A .NET certificate callback is paired with a true result.",
+      );
+    }
+  }
+
+  if (language === "python") {
+    for (const match of matchesIn(text, /verify\s*=\s*False|_create_unverified_context\s*\(/g)) {
+      push(
+        "NETWORK-PYTHON-UNVERIFIED",
+        "Python TLS check is disabled",
+        match,
+        "network",
+        "verify=False and an unverified SSL context skip certificate checks.",
+        "Leave verification on. Keep the same URL and the same response handling.",
+        "A Python HTTP or TLS call skips certificate verification.",
+      );
+    }
+    for (const match of matchesIn(text, /pickle\.loads\s*\(/g)) {
+      push(
+        "CODE-PYTHON-PICKLE",
+        "Python unpickles data",
+        match,
+        "injection",
+        "pickle.loads runs objects stored in the pickle stream.",
+        "Read a plain data format such as JSON. Keep the same fields the screen already uses.",
+        "pickle.loads is called.",
+      );
+    }
+  }
+
+  if (language === "rust") {
+    for (const match of matchesIn(text, /danger_accept_invalid_certs\s*\(\s*true\s*\)/g)) {
+      push(
+        "NETWORK-RUST-INVALID-CERTS",
+        "Rust TLS client accepts invalid certificates",
+        match,
+        "network",
+        "danger_accept_invalid_certs(true) turns certificate checks off.",
+        "Remove that call and use the default rustls verifier. Keep the same request.",
+        "danger_accept_invalid_certs(true) is set.",
+      );
+    }
+  }
+
+  if (language === "ruby") {
+    for (const match of matchesIn(text, /VERIFY_NONE/g)) {
+      push(
+        "NETWORK-RUBY-VERIFY-NONE",
+        "Ruby TLS verification is disabled",
+        match,
+        "network",
+        "VERIFY_NONE accepts any certificate.",
+        "Use VERIFY_PEER. Keep the same request and response handling.",
+        "VERIFY_NONE is used.",
+      );
+    }
+  }
+
+  if (language === "lua") {
+    for (const match of matchesIn(text, /\bos\.execute\s*\(|\bloadstring\s*\(/g)) {
+      push(
+        "CODE-LUA-DYNAMIC",
+        "Lua runs a command or loads code from text",
+        match,
+        "injection",
+        "os.execute starts a shell command. loadstring runs text as code.",
+        "Call a fixed function for the same game or app step. Do not pass outside text to os.execute or loadstring.",
+        "os.execute or loadstring is called.",
+      );
+    }
+  }
+
+  return found;
+}
+
 export function findingsForFile(file: SourceFile, files: SourceFile[]): Draft[] {
   return [
     ...manifestDrafts(file, files),
@@ -1513,6 +1782,7 @@ export function findingsForFile(file: SourceFile, files: SourceFile[]): Draft[] 
     ...scanScript(file),
     ...scanGradle(file),
     ...scanXmlConfig(file),
+    ...scanPolyglot(file),
     ...(file.path.endsWith("package.json") ? dependencyFindings(file) : []),
   ];
 }
