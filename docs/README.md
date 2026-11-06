@@ -17,12 +17,12 @@ When the harness is doing its job:
 
 ## What this is for
 
-SecureDroid is for the person writing the app. It reviews Kotlin, Java, Jetpack Compose, Gradle, manifests, Flutter, and React Native in one loop. It is the security brain inside the coding session: detect the project, map entry points, scan, verify, recommend, and stage.
+SecureDroid is for the person writing the app. It reviews Kotlin, Java, Jetpack Compose, Gradle, manifests, Flutter, and React Native in one loop. `/android-scan` is the one pass: deterministic rules, required Semgrep, Sigma, YARA, and the source. The model gives the end result from that context. The developer accepts or rejects a staged fix.
 
 It is not a penetration test, a dashboard, a CI gate, or a hosted model. Oh My Pi supplies the editor and the model. SecureDroid supplies the Android judgment.
 
 ## What "done" does not mean
 
-An app with no upheld findings is not MASVS-compliant. Authentication, certificate pinning, update enforcement, tamper checks, obfuscation, and privacy-policy text need product context, so they are not default findings. Dependency versions are not yet compared with an advisory database. The call path is read from source. The app is not installed on a device.
+An app with no upheld findings is not MASVS-compliant. Authentication, certificate pinning, update enforcement, tamper checks, obfuscation, and privacy-policy text need product context, so they are not default findings. Dependency versions use one local OSV snapshot. A package missing from that snapshot is not a pass. The call path is read from source. The app is not installed on a device.
 
 Those limits stay visible in the report. Closing them is future work. Hiding them is not the goal.

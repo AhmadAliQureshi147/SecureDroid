@@ -61,7 +61,7 @@ On Windows, use **Git Bash** for `npm run omp`. PowerShell can run the `node` sc
 npm run omp -- /c/Users/you/AndroidStudioProjects/YourApp
 ```
 
-## Start a review
+## Start a scan
 
 ```bash
 npm run omp -- /path/to/your-android-project

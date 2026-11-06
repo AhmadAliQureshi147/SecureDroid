@@ -108,7 +108,7 @@ export default function secureDroid(pi: HostApi): void {
       severity: z.string().describe("P1, P2, P3, or informational. P0 is rejected.").optional(),
       masvs: z.string().describe("Optional MASVS v2 requirement id for action record.").optional(),
       decision: z.string().describe("For action judge: uphold or reject. For action hypothesize: active, held, rejected, or supported.").optional(),
-      page: z.string().describe("1-based source page for action read. Start at 1 and continue until the last page.").optional(),
+      page: z.string().describe("1-based source page for action read, only for a directory the scan said was left out.").optional(),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const base = ctx.cwd || process.cwd();
