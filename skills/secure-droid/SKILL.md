@@ -19,7 +19,7 @@ SecureDroid is the Android security workflow for this session. Oh My Pi reads, s
    - `skill://secure-droid/reviewer.md`
 3. Call `triage`, then spawn `android-verifier`. Report only findings marked upheld. Withheld findings are not vulnerabilities yet.
 4. Explain what is vulnerable, the conditions required, and what is still unknown. Keep severity separate from confidence. Do not write exploit steps.
-5. If the rules missed an issue, call `record` with the file and line you read. The finding stays medium confidence and cannot be P0.
+5. If the rules missed an issue, call `record` with the file and line you read. The finding stays medium confidence and cannot be P0. If the claim is not ready for a line, call `hypothesize` instead. `/android-threads` lists those claims. `/android-thread` opens one. `/android-activity` shows which harness actions ran and is not evidence.
 6. When the developer asks to clean the project, call `remediate` to stage every automatic recipe, or `fix` for one finding. Do not write the source file yourself.
 7. Call `verify`. `partial` means the static check cleared and the build was not run. Do not describe that as a pass.
 8. The developer accepts or rejects the stage with `/android-accept` or `/android-reject`.

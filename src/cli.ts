@@ -4,7 +4,7 @@ import path from "node:path";
 import { runSecureDroid } from "./engine.ts";
 
 const [command = "help", ...rest] = process.argv.slice(2);
-const needsId = new Set(["investigate", "explain", "recommend", "fix", "verify", "accept", "reject", "except"]);
+const needsId = new Set(["investigate", "explain", "recommend", "fix", "verify", "accept", "reject", "except", "thread"]);
 
 function help(): string {
   return [
@@ -16,6 +16,10 @@ function help(): string {
     "  securedroid review [root]",
     "  securedroid read [page] [root]",
     "  securedroid findings [root]",
+    "  securedroid threads [root]",
+    "  securedroid thread <thread-id> [root]",
+    "  securedroid activity [root]",
+    "  securedroid baseline [root]",
     "  securedroid investigate <finding-id> [root]",
     "  securedroid fix <finding-id> [root]",
     "  securedroid remediate [root]",

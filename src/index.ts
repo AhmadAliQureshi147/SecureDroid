@@ -1,6 +1,7 @@
 import path from "node:path";
 import { runSecureDroid } from "./engine.ts";
 import { guardToolCall } from "./guard.ts";
+import { listThreadIndex } from "./harness.ts";
 import { SECURITY_POLICY } from "./policy.ts";
 import { collectFiles } from "./analysis.ts";
 import { detectFromFiles } from "./detect.ts";
@@ -44,7 +45,7 @@ interface HostApi {
   sendUserMessage(content: string): void;
 }
 
-const TOOL_ACTIONS = ["detect", "map", "scan", "review", "read", "triage", "investigate", "explain", "recommend", "fix", "remediate", "verify", "judge", "status", "record"] as const;
+const TOOL_ACTIONS = ["detect", "map", "scan", "review", "read", "triage", "investigate", "explain", "recommend", "fix", "remediate", "verify", "judge", "status", "record", "hypothesize", "threads", "thread", "activity", "baseline"] as const;
 
 const detectedProjects = new Map<string, boolean>();
 
@@ -75,7 +76,9 @@ export default function secureDroid(pi: HostApi): void {
     if (event.reason === "revive") return undefined;
     const cwd = ctx.cwd || process.cwd();
     if (!projectIsAndroid(cwd)) return undefined;
-    return { systemPrompt: [...(event.systemPrompt ?? []), SECURITY_POLICY] };
+    const threads = listThreadIndex(cwd).slice(0, 5);
+    const memory = threads.length === 0 ? "" : `Open research threads. Retrieve one with action thread before you use it: ${threads.join(" | ")}`;
+    return { systemPrompt: [...(event.systemPrompt ?? []), SECURITY_POLICY, memory].filter((line) => line.length > 0) };
   });
 
   pi.on("tool_call", (event) => {
@@ -104,7 +107,7 @@ export default function secureDroid(pi: HostApi): void {
       category: z.string().describe("Finding category for action record.").optional(),
       severity: z.string().describe("P1, P2, P3, or informational. P0 is rejected.").optional(),
       masvs: z.string().describe("Optional MASVS v2 requirement id for action record.").optional(),
-      decision: z.string().describe("For action judge: uphold or reject.").optional(),
+      decision: z.string().describe("For action judge: uphold or reject. For action hypothesize: active, held, rejected, or supported.").optional(),
       page: z.string().describe("1-based source page for action read. Start at 1 and continue until the last page.").optional(),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
@@ -140,6 +143,10 @@ export default function secureDroid(pi: HostApi): void {
     { name: "android-scan", description: "Run deterministic Android security checks", run: (_args, cwd) => ({ text: runSecureDroid({ action: "scan", root: cwd }).text }) },
     { name: "android-triage", description: "Keep only verifier-upheld vulnerabilities", run: (_args, cwd) => ({ text: runSecureDroid({ action: "triage", root: cwd }).text }) },
     { name: "android-findings", description: "Show stored SecureDroid findings", run: (_args, cwd) => ({ text: runSecureDroid({ action: "status", root: cwd }).text }) },
+    { name: "android-threads", description: "List saved research threads without their evidence", run: (_args, cwd) => ({ text: runSecureDroid({ action: "threads", root: cwd }).text }) },
+    { name: "android-thread", description: "Read one research thread", run: (args, cwd) => ({ text: runSecureDroid({ action: "thread", root: cwd, findingId: args.trim() }).text }) },
+    { name: "android-activity", description: "Summarize harness actions without treating them as findings", run: (_args, cwd) => ({ text: runSecureDroid({ action: "activity", root: cwd }).text }) },
+    { name: "android-baseline", description: "Replace the scan comparison point with the current findings", run: (_args, cwd) => ({ text: runSecureDroid({ action: "baseline", root: cwd }).text }) },
     {
       name: "android-review",
       description: "Scan and ask the model to investigate the Android project",

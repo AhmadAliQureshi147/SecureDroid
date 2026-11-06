@@ -1,6 +1,7 @@
 import { evaluateRepository } from "./analysis.ts";
 import { brainStatus } from "./brain.ts";
 import { graphContext } from "./graphify.ts";
+import { formatActivity, formatThread, formatThreadIndex, noteBaseline, readThread, recordActivity, refreshBaseline, saveHypothesis } from "./harness.ts";
 import { readSourcePage } from "./source.ts";
 import { collectExternalFindings, mergeExternal } from "./engines.ts";
 import { saveScan, acceptException, acceptStaged, loadStore, recordInvestigation, rejectStaged, stageFix, verifyStaged } from "./store.ts";
@@ -45,6 +46,9 @@ const PROCEDURE = [
   "9. Record an extra finding with the record action only when you can name a real file and line. It stays medium confidence and cannot be P0.",
   "10. Report only findings the verifier upheld. Withheld findings are candidates, not vulnerabilities. Spawn android-verifier before telling the developer something is vulnerable.",
   "11. Before that report, call action read from page 1 until the last source page. On each page, review every line with the rules and your own Android insecure-coding knowledge. Leave lines the rules already recorded. If you judge a missed line insecure, record it, then continue to the next line.",
+  "12. A model answer is a lead. Keep an observation, an inference, and an untested hypothesis separate. Save the hypothesis with action hypothesize. Read the index with action threads, then one thread with action thread.",
+  "13. The activity log records which harness actions ran. It is not evidence. The baseline comparison is a change in the finding set, not a claim that the app is secure.",
+  "14. The developer accepts a fix and is the only person who reports outside this project. A draft is not a submission.",
 ].join("\n");
 
 function bySeverity(findings: Finding[]): Finding[] {
@@ -107,6 +111,16 @@ function persistScan(root: string, findings: Finding[]): string[] {
 }
 
 export function runSecureDroid(request: ActionRequest): ActionResult {
+  const result = executeSecureDroid(request);
+  try {
+    recordActivity(request.root, request.action, result.ok);
+  } catch {
+    // Activity is a harness log. A write failure must not change the review result.
+  }
+  return result;
+}
+
+function executeSecureDroid(request: ActionRequest): ActionResult {
   try {
     const root = request.root;
     if (request.action === "detect" || request.action === "map" || request.action === "scan" || request.action === "review") {
@@ -137,7 +151,7 @@ export function runSecureDroid(request: ActionRequest): ActionResult {
         };
       }
       const stored = request.action === "scan" || request.action === "review" ? triageRepository(root) : loadStore(root).findings;
-      const body = `${header.join("\n")}\n${reportFindings(stored)}`;
+      const body = `${header.join("\n")}\n${noteBaseline(root, stored)}\n${reportFindings(stored)}`;
       if (request.action === "review") {
         const graph = graphContext(root, stored, evaluated.map.entryPoints);
         return { ok: true, text: `${PROCEDURE}\n\n${body}\n\n${graph}`, data: { findings: stored, procedure: PROCEDURE } };
@@ -149,6 +163,34 @@ export function runSecureDroid(request: ActionRequest): ActionResult {
       triageRepository(root);
       const stored = loadStore(root);
       return { ok: true, text: reportFindings(stored.findings), data: stored };
+    }
+
+    if (request.action === "hypothesize") {
+      const thread = saveHypothesis(root, {
+        question: request.title ?? "",
+        assessment: request.why ?? "",
+        evidence: request.file ?? request.reason ?? "",
+        next: request.recommendation ?? "",
+        status: request.decision,
+      });
+      return { ok: true, text: `Saved research thread ${thread.id}. It is not a vulnerability.\n\n${formatThread(thread)}`, data: thread };
+    }
+
+    if (request.action === "threads") {
+      return { ok: true, text: formatThreadIndex(root) };
+    }
+
+    if (request.action === "thread") {
+      return { ok: true, text: formatThread(readThread(root, request.findingId?.trim() ?? "")) };
+    }
+
+    if (request.action === "activity") {
+      return { ok: true, text: formatActivity(root) };
+    }
+
+    if (request.action === "baseline") {
+      const findings = loadStore(root).findings;
+      return { ok: true, text: refreshBaseline(root, findings), data: findings };
     }
 
     if (request.action === "read") {

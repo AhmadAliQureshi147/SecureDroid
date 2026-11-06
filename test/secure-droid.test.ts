@@ -952,6 +952,36 @@ test("source read shows Kotlin, Dart, and React Native code before the review fi
   assert.match(done.text, /past the end/);
 });
 
+test("a hypothesis stays research state and a later scan compares the baseline", () => {
+  const root = project();
+  write(root, "app/src/main/AndroidManifest.xml", "<manifest></manifest>\n");
+  write(root, "app/src/main/java/example/Crypto.kt", 'fun x() { javax.crypto.Cipher.getInstance("AES") }\n');
+  const saved = runSecureDroid({
+    action: "hypothesize",
+    root,
+    title: "The cipher may expose repeated blocks",
+    why: "The call was read. No message was encrypted in a test.",
+    file: "The source line requests AES without naming a mode.",
+    recommendation: "Read the callers before calling this a finding.",
+    decision: "active",
+  });
+  assert.equal(saved.ok, true, saved.text);
+  assert.match(saved.text, /not a vulnerability/);
+  const index = runSecureDroid({ action: "threads", root });
+  assert.match(index.text, /thr-001 active/);
+  assert.doesNotMatch(index.text, /without naming a mode/);
+  const one = runSecureDroid({ action: "thread", root, findingId: "thr-001" });
+  assert.match(one.text, /without naming a mode/);
+  const first = runSecureDroid({ action: "scan", root });
+  assert.match(first.text, /Baseline saved/);
+  const second = runSecureDroid({ action: "scan", root });
+  assert.match(second.text, /unchanged/);
+  assert.match(second.text, /Absence is not a pass/);
+  const activity = runSecureDroid({ action: "activity", root });
+  assert.match(activity.text, /hypothesize/);
+  assert.match(activity.text, /does not prove a vulnerability/);
+});
+
 test("cli reports detection without claiming a clean project is vulnerable", () => {
   const result = spawnSync(process.execPath, ["--experimental-strip-types", "src/cli.ts", "detect", path.join(fixtures, "flutter")], {
     cwd: path.join(fixtures, ".."),
