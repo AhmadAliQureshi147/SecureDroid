@@ -10,9 +10,19 @@ A model answer is a lead. A rule match is a candidate. A finding is called a vul
 
 ## How a session works
 
-![How a SecureDroid session works, from opening the chat through scan, review, a staged fix, and accept or reject](docs/diagrams/session-flow.png)
+![How one SecureDroid scan works, from opening the chat through /android-scan, the end result, and accept or reject](docs/diagrams/session-flow.png)
 
-The chat does not print findings by itself. `/android-scan` prints them. `/android-review` is when the model reads the source.
+There is one scan command. The chat does not print findings by itself.
+
+1. `npm run omp -- /path/to/the/app` opens the Oh My Pi chat in that folder.
+2. `/android-scan` runs the built-in rules, required Semgrep, and the Sigma and YARA packs.
+3. The verifier upholds or withholds each match. The first scan saves a baseline.
+4. The same result includes the source, one directory at a time, with the rule hits already listed.
+5. The model judges that context. A missed insecure line is recorded. An unproven claim is a research thread, not a finding.
+6. The end result names only upheld findings as vulnerabilities.
+7. `/android-fix` or `/android-remediate` stores a diff. The source file stays as it is until `/android-accept`. `/android-reject` drops the diff.
+
+If the app is too large for one bundle, the scan names the remaining pages. The model reads those with the `read` tool action before the end result. That action is not a second slash command.
 
 ## What you need
 
@@ -61,7 +71,6 @@ The first lines are the npm script. The terminal then becomes the Oh My Pi chat,
 
 ```text
 /android-scan
-/android-review
 ```
 
 The planted sample is:
@@ -78,11 +87,11 @@ node --experimental-strip-types src/cli.ts scan /path/to/android-app
 
 Findings live in `<app>/.secure-droid/store.json`. Research threads live in `<app>/.secure-droid/research.json`. The activity log is `<app>/.secure-droid/activity.jsonl`. The baseline is `<app>/.secure-droid/baseline.json`.
 
-## Review flow
+## Inside the one scan
 
-![Review flow between you, the Oh My Pi chat, the android_security tool, and the app folder](docs/diagrams/review-sequence.png)
+![One scan between you, the Oh My Pi chat, the android_security tool, and the app folder](docs/diagrams/review-sequence.png)
 
-On each source page the model is told to learn what that directory does, then judge every line. Lines the rules already recorded are left alone. A line the rules missed is recorded on that file and line, then the model continues. A fix is staged only when the same screen, data, and user step still work. If the safe change would remove a feature, it stays a recommendation.
+`/android-scan` is the only scan command. It returns the rules, the scanner notes, and the source context together. On each included directory the model learns what that code does, then judges every line. Lines the rules already recorded are left alone. A line the rules missed is recorded on that file and line. A fix is staged only when the same screen, data, and user step still work. If the safe change would remove a feature, it stays a recommendation.
 
 ## Commands
 
@@ -92,8 +101,7 @@ Inside the chat, type the slash command. The same action exists on the command l
 |---|---|---|
 | `/android-detect` | Name the frameworks, languages, and which scanners are installed. | No |
 | `/android-map` | List launcher and exported entry points. | No |
-| `/android-scan` | Run the rules and scanners, triage the matches, and save or compare the baseline. | Store only |
-| `/android-review` | Ask the model to read every directory and investigate. | Store only |
+| `/android-scan` | One command. Run the rules and scanners, attach the source context, and ask the model for the end result. | Store only |
 | `/android-triage` | Show which stored findings the verifier still upholds. | Store only |
 | `/android-findings` | Print the stored findings. | No |
 | `/android-investigate <id>` | Show the evidence, runtime label, and recommendation for one finding. | No |
@@ -130,14 +138,14 @@ node --experimental-strip-types src/cli.ts reject <finding-id> /path/to/android-
 
 | Piece | Role |
 |---|---|
-| `prompts/harness.md` | Standing rules for the model: read every directory, keep features, do not edit source. |
+| `prompts/harness.md` | Standing rules for the model: one scan, judge the included source, keep features, do not edit source. |
 | `agents/` | Specialist roles. None of them accept a patch. The fixer only stages. |
 | `skills/secure-droid/` | Repeatable procedure for Kotlin, Compose, Flutter, React Native, fixes, and review. |
 | `src/rules.ts` | Deterministic insecure-coding checks. |
 | `src/standards.ts` | Maps a rule to an OWASP MASVS v2 id, and lists requirements that are not default findings. |
 | `src/runtime.ts` | Labels a finding `runtime-reachable`, `runtime-conditional`, or `build-time` from a source call path. |
 | `src/engines.ts` | Runs Semgrep, Sigma, and YARA on every scan. Keeps a hit only when the line still shows the pattern. ast-grep is extra. |
-| `src/source.ts` | One directory per page, with the rule hits for that page and the code-map links. |
+| `src/source.ts` | Puts every collected directory into the scan result, with the rule hits and the code-map links. A directory that does not fit is named so it can be read next. |
 | `src/graphify.ts` | Local call and import map. Extracted means read those files. Inferred stays unconfirmed. |
 | `src/harness.ts` | Research threads, the activity log, and the scan baseline. |
 | `src/triage.ts` | Upholds, withholds, or rejects. The model cannot dismiss a live rule match. |
@@ -155,7 +163,7 @@ The session, the tool, the judgment, and the disk stay apart. The model produces
 
 ![Data flow from the app source through scan, triage, a directory page, a recorded line or a research thread, a staged diff, and accept or reject](docs/diagrams/data-flow.png)
 
-`store.json` holds findings and staged diffs. `research.json` holds unproven claims. `baseline.json` is the comparison set. `activity.jsonl` counts actions and is not proof of a vulnerability. `graph.json` shows how the code is wired and does not decide a finding. The app source is read on every scan and review. It is written only when you accept, and only if the file still matches the scanned bytes.
+`store.json` holds findings and staged diffs. `research.json` holds unproven claims. `baseline.json` is the comparison set. `activity.jsonl` counts actions and is not proof of a vulnerability. `graph.json` shows how the code is wired and does not decide a finding. `/android-scan` reads the app source and returns it with the findings. The source is written only when you accept, and only if the file still matches the scanned bytes.
 
 ## Required rule packs
 

@@ -45,7 +45,7 @@ interface HostApi {
   sendUserMessage(content: string): void;
 }
 
-const TOOL_ACTIONS = ["detect", "map", "scan", "review", "read", "triage", "investigate", "explain", "recommend", "fix", "remediate", "verify", "judge", "status", "record", "hypothesize", "threads", "thread", "activity", "baseline"] as const;
+const TOOL_ACTIONS = ["detect", "map", "scan", "read", "triage", "investigate", "explain", "recommend", "fix", "remediate", "verify", "judge", "status", "record", "hypothesize", "threads", "thread", "activity", "baseline"] as const;
 
 const detectedProjects = new Map<string, boolean>();
 
@@ -92,7 +92,7 @@ export default function secureDroid(pi: HostApi): void {
     name: "android_security",
     label: "Android security",
     description:
-      "Android security harness for Kotlin, Java, Compose, Flutter, React Native, manifests, and Gradle. detect, map, scan, then read every source page before judging. triage, investigate, explain, record a line-pinned finding, judge a finding, and stage fixes with fix or remediate. Only upheld findings are vulnerabilities. This tool does not apply patches; the developer accepts them.",
+      "Android security harness for Kotlin, Java, Compose, Flutter, React Native, manifests, and Gradle. scan is the one pass: deterministic rules, Semgrep, Sigma, YARA, and the source context. Then give the end result. triage, investigate, explain, record a line-pinned finding, judge a finding, and stage fixes with fix or remediate. Only upheld findings are vulnerabilities. This tool does not apply patches; the developer accepts them.",
     loadMode: "essential",
     approval: "write",
     parameters: z.object({
@@ -140,21 +140,20 @@ export default function secureDroid(pi: HostApi): void {
   const commands: Array<{ name: string; description: string; run: (args: string, cwd: string) => { text: string; user?: string } }> = [
     { name: "android-detect", description: "Identify Android frameworks, languages, and available tools", run: (_args, cwd) => ({ text: runSecureDroid({ action: "detect", root: cwd }).text }) },
     { name: "android-map", description: "Map Android entry points and modules", run: (_args, cwd) => ({ text: runSecureDroid({ action: "map", root: cwd }).text }) },
-    { name: "android-scan", description: "Run deterministic Android security checks", run: (_args, cwd) => ({ text: runSecureDroid({ action: "scan", root: cwd }).text }) },
+    {
+      name: "android-scan",
+      description: "Run the full scan: rules, scanners, source context, then the model gives the end result",
+      run: (_args, cwd) => ({
+        text: runSecureDroid({ action: "scan", root: cwd }).text,
+        user: "One scan. The tool result already contains the deterministic rules, Semgrep, Sigma, YARA, and the source context. You are Grok 4.7. Judge the included source with the rules and your own Android insecure-coding knowledge. Leave lines the rules already recorded. If a line is insecure and the rules missed it, record that file and line. If a claim is not pinned to a line, hypothesize. Then give the end result: only upheld findings are vulnerabilities. Do not edit source and do not start another scan.",
+      }),
+    },
     { name: "android-triage", description: "Keep only verifier-upheld vulnerabilities", run: (_args, cwd) => ({ text: runSecureDroid({ action: "triage", root: cwd }).text }) },
     { name: "android-findings", description: "Show stored SecureDroid findings", run: (_args, cwd) => ({ text: runSecureDroid({ action: "status", root: cwd }).text }) },
     { name: "android-threads", description: "List saved research threads without their evidence", run: (_args, cwd) => ({ text: runSecureDroid({ action: "threads", root: cwd }).text }) },
     { name: "android-thread", description: "Read one research thread", run: (args, cwd) => ({ text: runSecureDroid({ action: "thread", root: cwd, findingId: args.trim() }).text }) },
     { name: "android-activity", description: "Summarize harness actions without treating them as findings", run: (_args, cwd) => ({ text: runSecureDroid({ action: "activity", root: cwd }).text }) },
     { name: "android-baseline", description: "Replace the scan comparison point with the current findings", run: (_args, cwd) => ({ text: runSecureDroid({ action: "baseline", root: cwd }).text }) },
-    {
-      name: "android-review",
-      description: "Scan and ask the model to investigate the Android project",
-      run: (_args, cwd) => ({
-        text: runSecureDroid({ action: "review", root: cwd }).text,
-        user: "Review this Android project before production. You are Grok 4.7, the review brain. Call android_security action read from page 1 until the last page. Each page is one directory of Kotlin, Java, C, C++, C#, Dart, JavaScript, TypeScript, Python, Rust, Ruby, Lua, HTML, CSS, Groovy, Gradle, or XML. While you read it, learn what that code does, then review every line with the rules and your own Android insecure-coding knowledge before you request the next page. Leave lines the rules already recorded and continue to the next line. If your knowledge says a line is insecure and the rules missed it, record that file and line, then continue. Spawn android-verifier. Report only upheld findings. Stage a fix only when the same screen, data, and user step still work. Do not change a feature, and do not modify source files yourself.",
-      }),
-    },
     { name: "android-investigate", description: "Show evidence for one finding", run: (args, cwd) => ({ text: runSecureDroid({ action: "investigate", root: cwd, findingId: args.trim() }).text }) },
     { name: "android-fix", description: "Stage a remediation without modifying source", run: (args, cwd) => ({ text: runSecureDroid({ action: "fix", root: cwd, findingId: args.trim() }).text }) },
     { name: "android-remediate", description: "Stage every automatic fix and leave source unchanged", run: (_args, cwd) => ({ text: runSecureDroid({ action: "remediate", root: cwd }).text }) },

@@ -13,7 +13,6 @@ function help(): string {
     "  securedroid detect [root]",
     "  securedroid map [root]",
     "  securedroid scan [root]",
-    "  securedroid review [root]",
     "  securedroid read [page] [root]",
     "  securedroid findings [root]",
     "  securedroid threads [root]",
@@ -60,7 +59,7 @@ if (command === "help" || command === "--help" || command === "-h") {
 } else {
   const parsed = split(rest);
   const result = runSecureDroid({
-    action: command === "findings" ? "status" : command,
+    action: command === "findings" ? "status" : command === "review" || command === "audit" ? "scan" : command,
     root: parsed.root,
     findingId: parsed.findingId,
     reason: parsed.reason,

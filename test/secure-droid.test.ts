@@ -477,6 +477,9 @@ test("the model tool cannot accept patches, and unsafe writes are blocked", asyn
   assert.equal(actions.includes("judge"), true);
   assert.equal(actions.includes("remediate"), true);
   assert.equal(actions.includes("read"), true);
+  assert.equal(actions.includes("scan"), true);
+  assert.equal(actions.includes("review"), false);
+  assert.equal(actions.includes("audit"), false);
   assert.ok(commands.includes("android-triage"));
   assert.ok(commands.includes("android-accept"));
   assert.ok(commands.includes("android-remediate"));
@@ -1010,6 +1013,10 @@ test("a scan runs the required semgrep, sigma, and yara packs", () => {
   assert.match(scan.text, /External: semgrep: \d+ confirmed/);
   assert.match(scan.text, /External: sigma: \d+ confirmed/);
   assert.match(scan.text, /External: yara: \d+ confirmed/);
+  assert.match(scan.text, /Source context: all \d+ directories are below/);
+  assert.match(scan.text, /MODE_WORLD_READABLE/);
+  assert.match(scan.text, /End of one-pass context/);
+  assert.ok((scan.data as Finding[]).some((item) => item.ruleId === "STORAGE-WORLD-ACCESSIBLE"));
   assert.doesNotMatch(scan.text, /Required scanner semgrep failed|Required scanner semgrep is not installed|Required sigma pack failed|Required yara pack failed/);
   const world = (scan.data as Finding[]).find((item) => item.ruleId === "STORAGE-WORLD-ACCESSIBLE");
   assert.ok(world);

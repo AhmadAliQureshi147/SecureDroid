@@ -15,6 +15,8 @@ interface Piece {
   parts: number;
 }
 
+const AUDIT_CHARS = 160_000;
+
 export function readSourcePage(root: string, pageNumber: number): string {
   const collected = collectFiles(root);
   const pages = pack(splitFiles(collected.files));
@@ -23,19 +25,54 @@ export function readSourcePage(root: string, pageNumber: number): string {
   if (page > pages.length) {
     return `Page ${page} is past the end. There are ${pages.length} source pages. Every collected directory has been shown.`;
   }
+  return renderPage(root, collected.files, collected.truncated, pages, page, "page");
+}
+
+export function readSourceBundle(root: string): { text: string; pages: number; included: number } {
+  const collected = collectFiles(root);
+  const pages = pack(splitFiles(collected.files));
+  if (pages.length === 0) {
+    return {
+      text: "No source files were collected. SecureDroid reads Kotlin, Java, C, C++, C#, Dart, JavaScript, TypeScript, Python, Rust, Ruby, Lua, HTML, CSS, Groovy, Gradle, and XML.",
+      pages: 0,
+      included: 0,
+    };
+  }
+  const chunks: string[] = [];
+  let used = 0;
+  let included = 0;
+  for (let index = 0; index < pages.length; index += 1) {
+    const pageText = renderPage(root, collected.files, collected.truncated, pages, index + 1, "bundle");
+    if (included > 0 && used + pageText.length > AUDIT_CHARS) break;
+    chunks.push(pageText);
+    used += pageText.length;
+    included += 1;
+  }
+  const left = pages.length - included;
+  const cover =
+    left === 0
+      ? `Source context: all ${pages.length} directories are below. Judge this source, then give the end result.`
+      : `Source context: directories 1-${included} of ${pages.length} are below. Call action read for page ${included + 1} through ${pages.length} before the end result.`;
+  return { text: [cover, ...chunks].join("\n\n"), pages: pages.length, included };
+}
+
+function renderPage(root: string, files: SourceFile[], truncated: boolean, pages: Piece[][], page: number, mode: "page" | "bundle"): string {
   const current = pages[page - 1] ?? [];
   const directory = directoryOf(current[0]?.path ?? "");
   const languages = [...new Set(current.map((piece) => piece.language))].join(", ");
   const last = page === pages.length;
-  const nextStep = last
-    ? "This is the last page. Review this directory for insecure Android code before you finish. Every collected directory has been shown."
-    : `Review this directory for insecure Android code before the next page. Then call android_security action read with page "${page + 1}".`;
+  const nextStep =
+    mode === "bundle"
+      ? "This directory is part of the one-pass context. Judge every line here before the end result."
+      : last
+        ? "This is the last page. Review this directory for insecure Android code before you finish. Every collected directory has been shown."
+        : `Review this directory for insecure Android code before the next page. Then call android_security action read with page "${page + 1}".`;
   return [
     `Source page ${page} of ${pages.length}. Directory: ${directory}. Languages: ${languages}.`,
     nextStep,
-    collected.truncated ? "Some files were skipped because the project exceeded the file count or the per-file size limit." : "",
+    truncated ? "Some files were skipped because the project exceeded the file count or the per-file size limit." : "",
     "While you read the lines below, first understand what this directory does in the app. Then review them for insecure Android coding in Kotlin, Java, C, C++, C#, Dart, JavaScript, TypeScript, Python, Rust, Ruby, Lua, HTML, CSS, Groovy, and XML. Use the rules and your own insecure-coding knowledge on every line. The code map is only the wiring.",
-    rulesOnPage(collected.files, current.map((piece) => piece.path)),
+    rulesOnPage(files, current.map((piece) => piece.path)),
     directoryLinks(root, directory),
     "Go line by line. If the rules already recorded a line, leave it and continue to the next line. If your Android knowledge says a line is insecure and the rules missed it, call action record for that file and line, then continue to the next line. Do not stop the directory. Do not invent a line, and do not write an exploit.",
     "A fix is staged for the developer to accept. Do not edit the file. Keep the same screen, data, and user step. If the safe fix would change how the app behaves, leave a recommendation.",

@@ -7,7 +7,7 @@ spawns: android-runtime, android-verifier, android-fixer, android-reviewer
 
 You lead the SecureDroid review.
 
-1. Call android_security with detect, then map, then scan. Then call action read from page 1 until the last source page. While you read each page, review every line with the rules and your own Android insecure-coding knowledge. Leave lines the rules already recorded. If a line is insecure and the rules missed it, record it, then continue to the next line.
+1. Call android_security action scan once. That is the full orchestrator: deterministic rules, Semgrep, Sigma, YARA, and the source context. Judge that context. Leave lines the rules already recorded. If a line is insecure and the rules missed it, record it. Then give the end result: only upheld findings. If the scan says pages were left out, call action read for those pages before the end result.
 2. Read the secure-droid skill and the specialist note for the frameworks that were detected.
 3. Spawn android-verifier before reporting vulnerabilities. Tell the developer only about upheld findings. Spawn android-runtime when the question is what the running app exposes.
 4. Spawn android-reviewer to check a call path the rules left at medium or low confidence. Do not raise confidence to confirmed yourself.
