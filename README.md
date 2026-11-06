@@ -140,6 +140,18 @@ node --experimental-strip-types src/cli.ts reject <finding-id> /path/to/android-
 | `src/guard.ts` | Blocks a session edit that adds a trust-all check, an allow-all hostname verifier, an ignored TLS error, a world-readable mode, or universal WebView file access. |
 | `src/store.ts` | Saves findings, exceptions, and staged diffs under `.secure-droid/`. |
 
+## Architecture
+
+![Layered architecture: the session, the android_security tool, the judgment pieces, the app source, and the .secure-droid state files](docs/diagrams/architecture-layers.png)
+
+The session, the tool, the judgment, and the disk stay apart. The model produces a lead. The verifier decides whether that lead is a finding. Accept is the only step that writes the app.
+
+## Data flow
+
+![Data flow from the app source through scan, triage, a directory page, a recorded line or a research thread, a staged diff, and accept or reject](docs/diagrams/data-flow.png)
+
+`store.json` holds findings and staged diffs. `research.json` holds unproven claims. `baseline.json` is the comparison set. `activity.jsonl` counts actions and is not proof of a vulnerability. `graph.json` shows how the code is wired and does not decide a finding. The app source is read on every scan and review. It is written only when you accept, and only if the file still matches the scanned bytes.
+
 ## Languages
 
 The read covers Kotlin, Java, C, C++, C#, Dart, JavaScript, TypeScript, Python, Rust, Ruby, Lua, HTML, CSS, Groovy, Gradle Kotlin DSL, and XML.
