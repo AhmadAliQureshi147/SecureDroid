@@ -26,9 +26,12 @@ function locate(name: "semgrep" | "ast-grep"): string | undefined {
 }
 
 export function toolEnv(): NodeJS.ProcessEnv {
+  const tools = path.join(ROOT, ".tools");
   return {
     ...process.env,
     SEMGREP_SEND_METRICS: "off",
+    SEMGREP_LOG_FILE: path.join(tools, "semgrep.log"),
+    SEMGREP_SETTINGS_FILE: path.join(tools, "semgrep-settings.yml"),
   };
 }
 

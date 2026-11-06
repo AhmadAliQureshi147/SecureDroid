@@ -5,6 +5,7 @@ import { collectFiles, toFinding } from "./analysis.ts";
 import { languageOf } from "./detect.ts";
 import { ruleStillMatches } from "./rules.ts";
 import { STANDARDS, requirementIds } from "./standards.ts";
+import { signatureHits } from "./signatures.ts";
 import { resolveTool, toolEnv } from "./tools.ts";
 import type { Category, Finding, SourceFile } from "./types.ts";
 
@@ -21,9 +22,11 @@ export function collectExternalFindings(projectRoot: string): { findings: Findin
   const files = collectFiles(projectRoot).files;
   const notes: string[] = [];
   const findings: Finding[] = [];
+  notes.push(runSignatures(findings, "sigma", projectRoot, files));
+  notes.push(runSignatures(findings, "yara", projectRoot, files));
   const semgrep = resolveTool("semgrep");
-  if (!semgrep) notes.push("semgrep is not installed. The built-in rules still ran.");
-  else notes.push(runPack(findings, "semgrep", semgrep, ["--config", path.join(ROOT, "engines", "semgrep"), "--json", "--quiet", "--metrics", "off", "--disable-version-check", projectRoot], projectRoot, files));
+  if (!semgrep) notes.push("Required scanner semgrep is not installed. This scan is incomplete. The engines/semgrep pack did not run.");
+  else notes.push(runSemgrep(findings, semgrep, projectRoot, files));
   const astGrep = resolveTool("ast-grep");
   if (!astGrep) notes.push("ast-grep is not installed. Structural checks use SecureDroid patterns.");
   else notes.push(runPack(findings, "ast-grep", astGrep, ["scan", "--json=compact", "-c", path.join(ROOT, "engines", "ast-grep", "sgconfig.yml"), projectRoot], projectRoot, files));
@@ -55,6 +58,42 @@ export function mergeExternal(primary: Finding[], extra: Finding[]): Finding[] {
     added.push(item);
   }
   return [...merged, ...added];
+}
+
+function runSignatures(findings: Finding[], engine: "sigma" | "yara", projectRoot: string, files: SourceFile[]): string {
+  try {
+    const hits = signatureHits(files).filter((hit) => hit.engine === engine);
+    const kept = confirmHits(hits, projectRoot, files, engine);
+    findings.push(...kept);
+    return `${engine}: ${kept.length} confirmed, ${hits.length - kept.length} dropped because the source line did not show the pattern.`;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "unreadable rules";
+    return `Required ${engine} pack failed. This scan is incomplete. ${detail}`;
+  }
+}
+
+function runSemgrep(findings: Finding[], binary: string, projectRoot: string, files: SourceFile[]): string {
+  const result = spawnSync(binary, ["--config", path.join(ROOT, "engines", "semgrep"), "--json", "--quiet", "--metrics", "off", "--disable-version-check", projectRoot], {
+    encoding: "utf8",
+    timeout: 45_000,
+    killSignal: "SIGKILL",
+    env: toolEnv(),
+  });
+  const stdout = result.stdout ?? "";
+  let parsed = false;
+  try {
+    parsed = typeof JSON.parse(stdout).results !== "undefined";
+  } catch {
+    parsed = false;
+  }
+  if (!parsed) {
+    const reason = result.error?.message ?? (stdout.trim() ? "unreadable output" : "no results");
+    return `Required scanner semgrep failed (${reason}). This scan is incomplete.`;
+  }
+  const hits = parseSemgrep(stdout);
+  const kept = confirmHits(hits, projectRoot, files, "semgrep");
+  findings.push(...kept);
+  return `semgrep: ${kept.length} confirmed, ${hits.length - kept.length} dropped because the source line did not show the pattern.`;
 }
 
 function runPack(findings: Finding[], engine: "semgrep" | "ast-grep", binary: string, args: string[], projectRoot: string, files: SourceFile[]): string {
@@ -101,6 +140,8 @@ const LINE_PATTERNS: Record<string, RegExp> = {
   "WEBVIEW-SAFE-BROWSING": /setSafeBrowsingEnabled\s*\(\s*false\s*\)/,
   "STORAGE-PROVIDER-PATH": /<root-path\b|path\s*=\s*"\/"/,
   "PLATFORM-SHARED-USER-ID": /android:sharedUserId\s*=/,
+  "NETWORK-CLEARTEXT": /usesCleartextTraffic\s*=\s*"true"|cleartextTrafficPermitted\s*=\s*"true"/,
+  "ANDROID-DEBUGGABLE": /android:debuggable\s*=\s*"true"/,
 };
 
 export function lineConfirms(ruleId: string, file: SourceFile, line: number): boolean {
@@ -115,6 +156,18 @@ export function lineConfirms(ruleId: string, file: SourceFile, line: number): bo
   return pattern.test(rows.slice(Math.max(0, line - 3), line + 3).join("\n"));
 }
 
+function commented(snippet: string): boolean {
+  const trimmed = snippet.trim();
+  return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("#") || trimmed.startsWith("--") || trimmed.startsWith("<!--");
+}
+
+function immutablePendingIntent(ruleId: string, file: SourceFile, line: number): boolean {
+  if (ruleId !== "PLATFORM-MUTABLE-PENDING-INTENT") return false;
+  const rows = file.text.split(/\r?\n/);
+  const start = rows.slice(0, Math.max(0, line - 1)).join("\n").length;
+  return /FLAG_IMMUTABLE/.test(file.text.slice(Math.max(0, start), start + 350));
+}
+
 function emptyTrustBody(text: string, line: number): boolean {
   const rows = text.split(/\r?\n/);
   const slice = rows.slice(Math.max(0, line - 6), line + 8).join("\n");
@@ -125,16 +178,18 @@ function emptyTrustBody(text: string, line: number): boolean {
 }
 
 
-function confirmHits(hits: ToolHit[], projectRoot: string, files: SourceFile[], engine: "semgrep" | "ast-grep"): Finding[] {
+function confirmHits(hits: ToolHit[], projectRoot: string, files: SourceFile[], engine: "semgrep" | "ast-grep" | "sigma" | "yara"): Finding[] {
   const now = new Date().toISOString();
   const findings: Finding[] = [];
   for (const hit of hits) {
     const relative = projectPath(projectRoot, hit.path);
     if (!relative) continue;
     const file = files.find((item) => item.path === relative);
-    const builtin = Boolean(file && ruleStillMatches(hit.ruleId, file, files));
-    const extra = Boolean(file && !builtin && lineConfirms(hit.ruleId, file, hit.line));
-    if (!file || (!builtin && !extra)) continue;
+    const row = file?.text.split(/\r?\n/)[hit.line - 1] ?? "";
+    if (!file || commented(row) || immutablePendingIntent(hit.ruleId, file, hit.line)) continue;
+    const builtin = ruleStillMatches(hit.ruleId, file, files);
+    const extra = !builtin && lineConfirms(hit.ruleId, file, hit.line);
+    if (!builtin && !extra) continue;
     findings.push(
       toFinding(
         {

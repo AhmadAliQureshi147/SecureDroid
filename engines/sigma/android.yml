@@ -1,0 +1,517 @@
+title: World-accessible file mode
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a01
+status: stable
+description: A file is opened with a world-accessible mode.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'MODE_WORLD_(?:READABLE|WRITEABLE)'
+      - 'openFileOutput\s*\([^,\n]*,\s*[12]\s*\)'
+      - 'getSharedPreferences\s*\([^,\n]*,\s*[12]\s*\)'
+  condition: selection
+level: high
+tags:
+  - securedroid.STORAGE-WORLD-ACCESSIBLE
+---
+title: Empty server certificate check
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a02
+status: stable
+description: Server certificate validation is empty.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'checkServerTrusted\s*\([^)]*\)\s*\{\s*\}'
+  condition: selection
+level: high
+tags:
+  - securedroid.NETWORK-TRUST-ALL
+---
+title: WebView SSL error calls proceed
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a03
+status: stable
+description: A WebView SSL error handler calls proceed.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'onReceivedSslError[\s\S]{0,400}proceed\s*\('
+  condition: selection
+level: high
+tags:
+  - securedroid.NETWORK-SSL-ERROR-PROCEED
+---
+title: Cipher requested as AES or ECB
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a04
+status: stable
+description: A cipher uses ECB or Cipher.getInstance("AES").
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'Cipher\.getInstance\(\s*"(?:[^"]*ECB[^"]*|AES)"\s*\)'
+  condition: selection
+level: high
+tags:
+  - securedroid.CRYPTO-ECB
+---
+title: Obsolete cipher algorithm
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a05
+status: stable
+description: A broken or obsolete cipher algorithm is requested.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'Cipher\.getInstance\(\s*"(?:DESede|DES|RC2|RC4|Blowfish|PBEWithMD5)'
+  condition: selection
+level: high
+tags:
+  - securedroid.CRYPTO-WEAK-ALGORITHM
+---
+title: Fixed SecureRandom seed
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a06
+status: stable
+description: SecureRandom is seeded with a fixed value.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'SecureRandom[\s\S]{0,180}setSeed\s*\(\s*(?:\d+|["''])'
+  condition: selection
+level: high
+tags:
+  - securedroid.CRYPTO-STATIC-SEED
+---
+title: WebView contents debugging enabled
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a07
+status: stable
+description: WebView contents debugging is enabled.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'setWebContentsDebuggingEnabled\s*\(\s*true\s*\)'
+  condition: selection
+level: medium
+tags:
+  - securedroid.WEBVIEW-DEBUG
+---
+title: Dart client accepts any certificate
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a08
+status: stable
+description: A Dart HTTP client accepts any certificate.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'badCertificateCallback[\s\S]{0,120}true'
+  condition: selection
+level: high
+tags:
+  - securedroid.FLUTTER-BAD-CERTIFICATE
+---
+title: WebView always allows mixed content
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a09
+status: stable
+description: The WebView always allows mixed content.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'MIXED_CONTENT_ALWAYS_ALLOW'
+  condition: selection
+level: high
+tags:
+  - securedroid.NETWORK-MIXED-CONTENT
+---
+title: PendingIntent factory without a mutability flag on that line
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a0a
+status: stable
+description: A PendingIntent factory call is present.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'PendingIntent\.get(?:Activity|Service|Broadcast)'
+  condition: selection
+level: medium
+tags:
+  - securedroid.PLATFORM-MUTABLE-PENDING-INTENT
+---
+title: Obsolete TLS protocol
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a0b
+status: stable
+description: TLS is configured to an obsolete protocol.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'SSLContext\.getInstance\(\s*"(?:SSL|SSLv3|TLSv1|TLSv1\.1)"'
+      - 'setEnabledProtocols[\s\S]{0,160}(?:SSLv3|SSL|TLSv1\.1|TLSv1)(?![.\w])'
+  condition: selection
+level: high
+tags:
+  - securedroid.NETWORK-WEAK-TLS
+---
+title: Unsafe intent URI flag
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a0c
+status: stable
+description: Intent.parseUri is used with an unsafe flag.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'URI_(?:ALLOW_UNSAFE|INTENT_SCHEME)'
+  condition: selection
+level: high
+tags:
+  - securedroid.PLATFORM-PARSE-URI
+---
+title: Dex class loader
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a0d
+status: stable
+description: A dex class loader is constructed.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - '(?:DexClassLoader|InMemoryDexClassLoader|PathClassLoader|BaseDexClassLoader)\s*\('
+  condition: selection
+level: high
+tags:
+  - securedroid.CODE-DYNAMIC-LOAD
+---
+title: Package context ignores security or includes code
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a0e
+status: stable
+description: createPackageContext uses CONTEXT_IGNORE_SECURITY or CONTEXT_INCLUDE_CODE.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'CONTEXT_(?:IGNORE_SECURITY|INCLUDE_CODE)'
+  condition: selection
+level: high
+tags:
+  - securedroid.CODE-PACKAGE-CONTEXT
+---
+title: Native library loaded from a path
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a0f
+status: stable
+description: System.load is called.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'System\.load\s*\('
+  condition: selection
+level: high
+tags:
+  - securedroid.CODE-NATIVE-LOAD
+---
+title: Unbounded native copy
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a10
+status: stable
+description: An unbounded native copy or mktemp is called.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - '\b(?:gets|strcpy|strcat|sprintf|vsprintf|mktemp)\s*\('
+  condition: selection
+level: high
+tags:
+  - securedroid.CODE-NATIVE-UNSAFE
+---
+title: Native command execution
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a11
+status: stable
+description: system or popen is called.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - '\b(?:system|popen)\s*\('
+  condition: selection
+level: high
+tags:
+  - securedroid.CODE-NATIVE-EXEC
+---
+title: .NET certificate callback
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a12
+status: stable
+description: A .NET server-certificate callback is installed.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'ServerCertificate(?:CustomValidationCallback|ValidationCallback)'
+  condition: selection
+level: high
+tags:
+  - securedroid.NETWORK-DOTNET-TRUST-ALL
+---
+title: Python TLS verification disabled
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a13
+status: stable
+description: Python TLS verification is disabled.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'verify\s*=\s*False|_create_unverified_context\s*\('
+  condition: selection
+level: high
+tags:
+  - securedroid.NETWORK-PYTHON-UNVERIFIED
+---
+title: Python pickle.loads
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a14
+status: stable
+description: pickle.loads is called.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'pickle\.loads\s*\('
+  condition: selection
+level: high
+tags:
+  - securedroid.CODE-PYTHON-PICKLE
+---
+title: Rust client accepts invalid certificates
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a15
+status: stable
+description: danger_accept_invalid_certs(true) is called.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'danger_accept_invalid_certs\s*\(\s*true\s*\)'
+  condition: selection
+level: high
+tags:
+  - securedroid.NETWORK-RUST-INVALID-CERTS
+---
+title: Ruby OpenSSL VERIFY_NONE
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a16
+status: stable
+description: Ruby TLS verification is set to VERIFY_NONE.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'VERIFY_NONE'
+  condition: selection
+level: high
+tags:
+  - securedroid.NETWORK-RUBY-VERIFY-NONE
+---
+title: Lua dynamic execution
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a17
+status: stable
+description: os.execute or loadstring is called.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - '\bos\.execute\s*\('
+      - '\bloadstring\s*\('
+  condition: selection
+level: high
+tags:
+  - securedroid.CODE-LUA-DYNAMIC
+---
+title: Activity task reparenting
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a18
+status: stable
+description: android:allowTaskReparenting is true.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'android:allowTaskReparenting\s*=\s*"true"'
+  condition: selection
+level: medium
+tags:
+  - securedroid.PLATFORM-TASK-REPARENT
+---
+title: HTTP body logging
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a19
+status: stable
+description: An HTTP logger is set to BODY.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'HttpLoggingInterceptor\.Level\.BODY'
+  condition: selection
+level: medium
+tags:
+  - securedroid.PRIVACY-HTTP-BODY
+---
+title: Safe browsing disabled
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a1a
+status: stable
+description: WebView safe browsing is turned off.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'setSafeBrowsingEnabled\s*\(\s*false\s*\)'
+  condition: selection
+level: medium
+tags:
+  - securedroid.WEBVIEW-SAFE-BROWSING
+---
+title: FileProvider root path
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a1b
+status: stable
+description: A FileProvider path exposes the filesystem root or an unrestricted path.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - '<root-path\b'
+      - 'path\s*=\s*"/"'
+  condition: selection
+level: high
+tags:
+  - securedroid.STORAGE-PROVIDER-PATH
+---
+title: Shared user id
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a1c
+status: stable
+description: android:sharedUserId is set.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'android:sharedUserId\s*='
+  condition: selection
+level: high
+tags:
+  - securedroid.PLATFORM-SHARED-USER-ID
+---
+title: Cleartext traffic permitted
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a1d
+status: stable
+description: Cleartext traffic is permitted.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'usesCleartextTraffic\s*=\s*"true"'
+      - 'cleartextTrafficPermitted\s*=\s*"true"'
+  condition: selection
+level: high
+tags:
+  - securedroid.NETWORK-CLEARTEXT
+---
+title: Debuggable application
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a1e
+status: stable
+description: The manifest sets android:debuggable to true.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'android:debuggable\s*=\s*"true"'
+  condition: selection
+level: high
+tags:
+  - securedroid.ANDROID-DEBUGGABLE
+---
+title: Hostname verification returns true
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a1f
+status: stable
+description: A verify method returns true with an empty check.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'boolean\s+verify\s*\([^)]*\)\s*\{\s*return\s+true\s*;\s*\}'
+  condition: selection
+level: high
+tags:
+  - securedroid.NETWORK-HOSTNAME-VERIFIER
+---
+title: Backup allowed
+id: 6f1e0a2b-7c3d-4e5f-9a1b-2c3d4e5f6a20
+status: stable
+description: android:allowBackup is true.
+logsource:
+  product: android
+  category: source
+detection:
+  selection:
+    line|re:
+      - 'android:allowBackup\s*=\s*"true"'
+  condition: selection
+level: medium
+tags:
+  - securedroid.ANDROID-BACKUP

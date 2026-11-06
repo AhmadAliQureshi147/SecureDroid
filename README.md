@@ -21,11 +21,16 @@ The chat does not print findings by itself. `/android-scan` prints them. `/andro
 - [Bun](https://bun.sh), because Oh My Pi runs on Bun
 - An app folder with `AndroidManifest.xml` and Gradle, `pubspec.yaml` for Flutter, or `package.json` for React Native
 
+Required:
+
+- Semgrep, on `PATH` or at `.tools/venv/bin/semgrep`. Every scan runs `engines/semgrep`. A scan without Semgrep is incomplete.
+- The Sigma pack in `engines/sigma` and the YARA pack in `engines/yara`. SecureDroid runs both on every scan. They are part of the rules, not optional downloads.
+
 Optional:
 
-- Semgrep, on `PATH` or at `.tools/venv/bin/semgrep`
 - The `graphify` command, from `uv tool install graphifyy`, for the local code map
 - A Cursor API key in `.env` if you want Oh My Pi to use the Cursor provider. The review brain named by this project is Grok 4.7 (`grok-4.7-high-fast`). Choose that model in the Oh My Pi model list.
+- ast-grep, for an extra structural pass. The built-in rules, Semgrep, Sigma, and YARA still run when it is missing.
 
 ## Setup
 
@@ -131,7 +136,7 @@ node --experimental-strip-types src/cli.ts reject <finding-id> /path/to/android-
 | `src/rules.ts` | Deterministic insecure-coding checks. |
 | `src/standards.ts` | Maps a rule to an OWASP MASVS v2 id, and lists requirements that are not default findings. |
 | `src/runtime.ts` | Labels a finding `runtime-reachable`, `runtime-conditional`, or `build-time` from a source call path. |
-| `src/engines.ts` | Keeps a Semgrep or ast-grep hit only when the line still shows the pattern. |
+| `src/engines.ts` | Runs Semgrep, Sigma, and YARA on every scan. Keeps a hit only when the line still shows the pattern. ast-grep is extra. |
 | `src/source.ts` | One directory per page, with the rule hits for that page and the code-map links. |
 | `src/graphify.ts` | Local call and import map. Extracted means read those files. Inferred stays unconfirmed. |
 | `src/harness.ts` | Research threads, the activity log, and the scan baseline. |
@@ -151,6 +156,20 @@ The session, the tool, the judgment, and the disk stay apart. The model produces
 ![Data flow from the app source through scan, triage, a directory page, a recorded line or a research thread, a staged diff, and accept or reject](docs/diagrams/data-flow.png)
 
 `store.json` holds findings and staged diffs. `research.json` holds unproven claims. `baseline.json` is the comparison set. `activity.jsonl` counts actions and is not proof of a vulnerability. `graph.json` shows how the code is wired and does not decide a finding. The app source is read on every scan and review. It is written only when you accept, and only if the file still matches the scanned bytes.
+
+## Required rule packs
+
+Every scan runs three packs. A hit is kept only when the built-in rule still matches that file, or the line still shows the insecure pattern. A comment is not a finding. `FLAG_IMMUTABLE` on a `PendingIntent` is not a finding.
+
+| Pack | Where | When it runs |
+|---|---|---|
+| Semgrep | `engines/semgrep` | Required. The installed Semgrep binary runs this pack. If Semgrep is missing or returns no JSON, the scan is incomplete. |
+| Sigma | `engines/sigma/android.yml` | Always. SecureDroid reads the rules. No Sigma CLI is required. |
+| YARA | `engines/yara/android.yar` | Always. SecureDroid reads the rules. No YARA CLI is required. |
+
+The packs cover the same insecure-coding families as the built-in rules: trust-all TLS, obsolete TLS, cleartext, WebView file access and debugging, mixed content, safe browsing turned off, world-readable files, FileProvider root paths, `sharedUserId`, `allowTaskReparenting`, dex class loaders, `CONTEXT_IGNORE_SECURITY`, `CONTEXT_INCLUDE_CODE`, `System.load`, a fixed `SecureRandom` seed, `Cipher.getInstance("AES")` and ECB, obsolete ciphers, HTTP body logging, unsafe `Intent.parseUri`, debuggable manifests, backup enabled, and the smaller C, C++, C#, Python, Rust, Ruby, and Lua checks.
+
+ast-grep remains an extra structural scanner. The three packs above still run when it is missing.
 
 ## Languages
 
@@ -210,4 +229,4 @@ npm test
 
 ## Limits
 
-SecureDroid does not discover every vulnerability and it does not replace a penetration test. The advisory check is one local OSV snapshot, not every published advisory. There is no CI gate, dashboard, or hosted model. The Oh My Pi provider you configure handles model traffic. The code map does not decide a vulnerability and does not edit source.
+SecureDroid does not discover every vulnerability and it does not replace a penetration test. Semgrep is required, and the Sigma and YARA packs run locally on every scan. A hit is kept only when that source line still shows the insecure pattern. The advisory check is one local OSV snapshot, not every published advisory. There is no CI gate, dashboard, or hosted model. The Oh My Pi provider you configure handles model traffic. The code map does not decide a vulnerability and does not edit source.

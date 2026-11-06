@@ -35,7 +35,7 @@ SecureDroid is the Android security workflow for this session. Oh My Pi reads, s
 - Do not invent a line number, a permission, a scanner result, or a passing test.
 - Do not turn off TLS, certificate checks, or authorization to make a warning disappear.
 - Do not claim MASVS coverage beyond the `masvs` field on a finding.
-- Missing tools are unavailable, not passed.
+- Semgrep is required. A scan without it is incomplete. Sigma and YARA run on every scan. A missing ast-grep is unavailable, not a pass.
 
 ## Confidence
 

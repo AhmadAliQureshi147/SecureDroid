@@ -11,6 +11,7 @@ import { runSecureDroid } from "../src/engine.ts";
 import { guardToolCall } from "../src/guard.ts";
 import secureDroid from "../src/index.ts";
 import { findingsFromAstGrep, findingsFromSemgrep } from "../src/engines.ts";
+import { signatureHits } from "../src/signatures.ts";
 import { summarizeGraphPath } from "../src/graphify.ts";
 import { linksForDirectory } from "../src/source.ts";
 import { checkFileSyntax } from "../src/syntax.ts";
@@ -980,6 +981,41 @@ test("a hypothesis stays research state and a later scan compares the baseline",
   const activity = runSecureDroid({ action: "activity", root });
   assert.match(activity.text, /hypothesize/);
   assert.match(activity.text, /does not prove a vulnerability/);
+});
+
+test("sigma and yara match insecure lines and skip the safe counterparts", () => {
+  const hits = signatureHits([
+    { path: "app/A.kt", text: "fun save() {\n  openFileOutput(\"notes\", MODE_WORLD_READABLE)\n}\n" },
+    { path: "app/B.kt", text: "fun save() {\n  openFileOutput(\"notes\", MODE_PRIVATE)\n}\n" },
+    { path: "app/C.kt", text: "fun enc() { Cipher.getInstance(\"AES/GCM/NoPadding\") }\n" },
+    { path: "app/D.kt", text: "fun enc() { Cipher.getInstance(\"AES\") }\n" },
+    { path: "app/E.kt", text: "fun stay() { PendingIntent.getActivity(this, 0, intent, FLAG_IMMUTABLE) }\n" },
+    { path: "app/F.kt", text: "// MODE_WORLD_READABLE is the pattern name\n" },
+  ]);
+  assert.ok(hits.some((hit) => hit.engine === "sigma" && hit.ruleId === "STORAGE-WORLD-ACCESSIBLE" && hit.path.endsWith("A.kt")));
+  assert.ok(hits.some((hit) => hit.engine === "yara" && hit.ruleId === "STORAGE-WORLD-ACCESSIBLE" && hit.path.endsWith("A.kt")));
+  assert.ok(hits.some((hit) => hit.engine === "sigma" && hit.ruleId === "CRYPTO-ECB" && hit.path.endsWith("D.kt")));
+  assert.ok(hits.some((hit) => hit.engine === "yara" && hit.ruleId === "CRYPTO-ECB" && hit.path.endsWith("D.kt")));
+  assert.equal(hits.some((hit) => hit.path.endsWith("B.kt") || hit.path.endsWith("C.kt") || hit.path.endsWith("E.kt") || hit.path.endsWith("F.kt")), false);
+  const ids = new Set(hits.map((hit) => hit.ruleId));
+  for (const id of ids) assert.ok(STANDARDS[id], id);
+});
+
+test("a scan runs the required semgrep, sigma, and yara packs", () => {
+  const root = project();
+  write(root, "app/src/main/AndroidManifest.xml", "<manifest></manifest>\n");
+  write(root, "app/src/main/java/example/Storage.kt", "fun save() {\n  openFileOutput(\"notes\", MODE_WORLD_READABLE)\n}\n");
+  const scan = runSecureDroid({ action: "scan", root });
+  assert.equal(scan.ok, true, scan.text);
+  assert.match(scan.text, /External: semgrep: \d+ confirmed/);
+  assert.match(scan.text, /External: sigma: \d+ confirmed/);
+  assert.match(scan.text, /External: yara: \d+ confirmed/);
+  assert.doesNotMatch(scan.text, /Required scanner semgrep failed|Required scanner semgrep is not installed|Required sigma pack failed|Required yara pack failed/);
+  const world = (scan.data as Finding[]).find((item) => item.ruleId === "STORAGE-WORLD-ACCESSIBLE");
+  assert.ok(world);
+  const evidence = world.evidence.map((item) => item.description).join("\n");
+  assert.match(evidence, /sigma/);
+  assert.match(evidence, /yara/);
 });
 
 test("cli reports detection without claiming a clean project is vulnerable", () => {

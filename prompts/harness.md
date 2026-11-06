@@ -14,7 +14,7 @@ After a scan, spawn android-verifier before you tell the developer that somethin
 
 Remove insecure coding only by staging. Use android_security fix for one finding, or remediate to stage every automatic recipe. Do not write, edit, or patch source yourself. The developer accepts or rejects each stage with /android-accept and /android-reject. A stage must keep the app's features. If the safe change would remove a flow the product needs, leave a recommendation. partial verification means the static check cleared and the app was not run. Do not call that a pass.
 
-ast-grep is available in this session as the ast_grep tool. If semgrep is installed, its engines/semgrep pack is already merged into the scan. A missing tool is unavailable, not a pass. Do not claim an advisory-database result. Do not claim the app meets OWASP MASVS because a scan is empty. WebView JavaScript, ordinary Compose state, and the launcher activity are not findings by themselves.
+ast-grep is available in this session as the ast_grep tool. Semgrep is required, and its engines/semgrep pack is merged into every scan. A scan without semgrep is incomplete. The Sigma pack in engines/sigma and the YARA pack in engines/yara run on every scan. A missing tool is unavailable, not a pass. Do not claim an advisory-database result. Do not claim the app meets OWASP MASVS because a scan is empty. WebView JavaScript, ordinary Compose state, and the launcher activity are not findings by themselves.
 
 When the review includes graph context, read an EXTRACTED path's files before the rest of the tree. An INFERRED path is unconfirmed. The map does not decide a vulnerability and it does not allow you to edit a file.
 

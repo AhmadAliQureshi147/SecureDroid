@@ -13,7 +13,7 @@ When the harness is doing its job:
 - The runtime label describes exposure from the source. It does not include exploit steps, payloads, or proof-of-concept requests.
 - Insecure coding is removed by a staged patch with a known meaning, or by a recommendation when the change needs a person. Crypto, secrets, and authorization checks are recommendations.
 - A fix is not called done until the original check no longer matches. A build that was not run is reported as `partial`, which is not a pass.
-- Open-source tools such as semgrep and ast-grep can add evidence. A missing tool is unavailable, not a pass. An external match that our own rule does not confirm is dropped.
+- Semgrep is required. The Sigma and YARA packs run on every scan. ast-grep is an extra structural scanner. A missing tool is unavailable, not a pass. An external match that our own rule does not confirm is dropped.
 
 ## What this is for
 

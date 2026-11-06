@@ -1,0 +1,161 @@
+rules:
+  - id: STORAGE-WORLD-ACCESSIBLE
+    languages: [generic]
+    severity: ERROR
+    message: A file is opened with a world-accessible mode.
+    pattern-regex: 'MODE_WORLD_(READABLE|WRITEABLE)|openFileOutput\s*\([^,\n]*,\s*[12]\s*\)|getSharedPreferences\s*\([^,\n]*,\s*[12]\s*\)'
+  - id: NETWORK-TRUST-ALL
+    languages: [generic]
+    severity: ERROR
+    message: Server certificate validation is empty.
+    pattern-regex: 'checkServerTrusted\s*\([^)]*\)\s*\{\s*\}'
+  - id: NETWORK-SSL-ERROR-PROCEED
+    languages: [generic]
+    severity: ERROR
+    message: A WebView SSL error handler calls proceed.
+    pattern-regex: 'onReceivedSslError[\s\S]{0,400}proceed\s*\('
+  - id: CRYPTO-ECB
+    languages: [generic]
+    severity: WARNING
+    message: A cipher uses ECB or Cipher.getInstance("AES").
+    pattern-regex: 'Cipher\.getInstance\(\s*"(?:[^"]*ECB[^"]*|AES)"\s*\)'
+  - id: CRYPTO-WEAK-ALGORITHM
+    languages: [generic]
+    severity: ERROR
+    message: A broken or obsolete cipher algorithm is requested.
+    pattern-regex: 'Cipher\.getInstance\(\s*"(?:DESede|DES|RC2|RC4|Blowfish|PBEWithMD5)'
+  - id: CRYPTO-STATIC-SEED
+    languages: [generic]
+    severity: ERROR
+    message: SecureRandom is seeded with a fixed value.
+    pattern-regex: 'SecureRandom[\s\S]{0,180}setSeed\s*\(\s*(?:\d+|["''])'
+  - id: WEBVIEW-DEBUG
+    languages: [generic]
+    severity: WARNING
+    message: WebView contents debugging is enabled.
+    pattern-regex: 'setWebContentsDebuggingEnabled\s*\(\s*true\s*\)'
+  - id: FLUTTER-BAD-CERTIFICATE
+    languages: [generic]
+    severity: ERROR
+    message: A Dart HTTP client accepts any certificate.
+    pattern-regex: 'badCertificateCallback[\s\S]{0,120}true'
+  - id: NETWORK-MIXED-CONTENT
+    languages: [generic]
+    severity: ERROR
+    message: The WebView always allows mixed content.
+    pattern-regex: 'MIXED_CONTENT_ALWAYS_ALLOW'
+  - id: NETWORK-WEAK-TLS
+    languages: [generic]
+    severity: ERROR
+    message: TLS is configured to an obsolete protocol.
+    pattern-regex: 'SSLContext\.getInstance\(\s*"(?:SSL|SSLv3|TLSv1|TLSv1\.1)"|setEnabledProtocols[\s\S]{0,160}(?:SSLv3|SSL|TLSv1\.1|TLSv1)(?![.\w])'
+  - id: PLATFORM-PARSE-URI
+    languages: [generic]
+    severity: ERROR
+    message: Intent.parseUri is used with an unsafe flag.
+    pattern-regex: 'URI_(ALLOW_UNSAFE|INTENT_SCHEME)'
+  - id: CODE-DYNAMIC-LOAD
+    languages: [generic]
+    severity: ERROR
+    message: A dex class loader is constructed.
+    pattern-regex: '(?:DexClassLoader|InMemoryDexClassLoader|PathClassLoader|BaseDexClassLoader)\s*\('
+  - id: CODE-PACKAGE-CONTEXT
+    languages: [generic]
+    severity: ERROR
+    message: createPackageContext uses CONTEXT_IGNORE_SECURITY or CONTEXT_INCLUDE_CODE.
+    pattern-regex: 'CONTEXT_(IGNORE_SECURITY|INCLUDE_CODE)'
+  - id: CODE-NATIVE-LOAD
+    languages: [generic]
+    severity: ERROR
+    message: System.load is called.
+    pattern-regex: 'System\.load\s*\('
+  - id: CODE-NATIVE-UNSAFE
+    languages: [generic]
+    severity: ERROR
+    message: An unbounded native copy or mktemp is called.
+    pattern-regex: '\b(?:gets|strcpy|strcat|sprintf|vsprintf|mktemp)\s*\('
+  - id: CODE-NATIVE-EXEC
+    languages: [generic]
+    severity: ERROR
+    message: system or popen is called.
+    pattern-regex: '\b(?:system|popen)\s*\('
+  - id: NETWORK-DOTNET-TRUST-ALL
+    languages: [generic]
+    severity: ERROR
+    message: A .NET server-certificate callback is installed.
+    pattern-regex: 'ServerCertificate(?:CustomValidationCallback|ValidationCallback)'
+  - id: NETWORK-PYTHON-UNVERIFIED
+    languages: [generic]
+    severity: ERROR
+    message: Python TLS verification is disabled.
+    pattern-regex: 'verify\s*=\s*False|_create_unverified_context\s*\('
+  - id: CODE-PYTHON-PICKLE
+    languages: [generic]
+    severity: ERROR
+    message: pickle.loads is called.
+    pattern-regex: 'pickle\.loads\s*\('
+  - id: NETWORK-RUST-INVALID-CERTS
+    languages: [generic]
+    severity: ERROR
+    message: danger_accept_invalid_certs(true) is called.
+    pattern-regex: 'danger_accept_invalid_certs\s*\(\s*true\s*\)'
+  - id: NETWORK-RUBY-VERIFY-NONE
+    languages: [generic]
+    severity: ERROR
+    message: Ruby TLS verification is set to VERIFY_NONE.
+    pattern-regex: 'VERIFY_NONE'
+  - id: CODE-LUA-DYNAMIC
+    languages: [generic]
+    severity: ERROR
+    message: os.execute or loadstring is called.
+    pattern-regex: '\bos\.execute\s*\(|\bloadstring\s*\('
+  - id: PLATFORM-TASK-REPARENT
+    languages: [generic]
+    severity: WARNING
+    message: android:allowTaskReparenting is true.
+    pattern-regex: 'android:allowTaskReparenting\s*=\s*"true"'
+  - id: PRIVACY-HTTP-BODY
+    languages: [generic]
+    severity: WARNING
+    message: An HTTP logger is set to BODY.
+    pattern-regex: 'HttpLoggingInterceptor\.Level\.BODY'
+  - id: WEBVIEW-SAFE-BROWSING
+    languages: [generic]
+    severity: WARNING
+    message: WebView safe browsing is turned off.
+    pattern-regex: 'setSafeBrowsingEnabled\s*\(\s*false\s*\)'
+  - id: STORAGE-PROVIDER-PATH
+    languages: [generic]
+    severity: ERROR
+    message: A FileProvider path exposes the filesystem root or an unrestricted path.
+    pattern-regex: '<root-path\b|path\s*=\s*"/"'
+  - id: PLATFORM-SHARED-USER-ID
+    languages: [generic]
+    severity: ERROR
+    message: android:sharedUserId is set.
+    pattern-regex: 'android:sharedUserId\s*='
+  - id: NETWORK-CLEARTEXT
+    languages: [generic]
+    severity: ERROR
+    message: Cleartext traffic is permitted.
+    pattern-regex: 'usesCleartextTraffic\s*=\s*"true"|cleartextTrafficPermitted\s*=\s*"true"'
+  - id: ANDROID-DEBUGGABLE
+    languages: [generic]
+    severity: ERROR
+    message: The manifest sets android:debuggable to true.
+    pattern-regex: 'android:debuggable\s*=\s*"true"'
+  - id: NETWORK-HOSTNAME-VERIFIER
+    languages: [generic]
+    severity: ERROR
+    message: A verify method returns true with an empty check.
+    pattern-regex: 'boolean\s+verify\s*\([^)]*\)\s*\{\s*return\s+true\s*;\s*\}'
+  - id: ANDROID-BACKUP
+    languages: [generic]
+    severity: WARNING
+    message: android:allowBackup is true.
+    pattern-regex: 'android:allowBackup\s*=\s*"true"'
+  - id: PLATFORM-MUTABLE-PENDING-INTENT
+    languages: [generic]
+    severity: WARNING
+    message: A PendingIntent factory call is present.
+    pattern-regex: 'PendingIntent\.get(?:Activity|Service|Broadcast)'
