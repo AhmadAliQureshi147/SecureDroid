@@ -10,25 +10,7 @@ A model answer is a lead. A rule match is a candidate. A finding is called a vul
 
 ## How a session works
 
-```mermaid
-flowchart TD
-  start["npm run omp -- /path/to/app"] --> chat["Oh My Pi chat in that folder"]
-  chat --> scan["/android-scan"]
-  scan --> rules["Built-in rules, Semgrep, ast-grep"]
-  rules --> triage["Verifier keeps or withholds each match"]
-  triage --> base["First scan saves a baseline"]
-  base --> review["/android-review"]
-  review --> pages["Model reads one directory per page"]
-  pages --> map["Graphify links show how the code is wired"]
-  map --> judge["Rules plus the model's Android knowledge"]
-  judge --> record["Missed line: record. Unproven claim: hypothesize"]
-  record --> uphold["Report only upheld findings"]
-  uphold --> stage["/android-fix or /android-remediate"]
-  stage --> wait["Source stays unchanged"]
-  wait --> choice{"You decide"}
-  choice -->|/android-accept| write["Patch is saved into the file"]
-  choice -->|/android-reject| keep["File stays as it was"]
-```
+![How a SecureDroid session works, from opening the chat through scan, review, a staged fix, and accept or reject](docs/diagrams/session-flow.png)
 
 The chat does not print findings by itself. `/android-scan` prints them. `/android-review` is when the model reads the source.
 
@@ -93,30 +75,7 @@ Findings live in `<app>/.secure-droid/store.json`. Research threads live in `<ap
 
 ## Review flow
 
-```mermaid
-sequenceDiagram
-  participant You
-  participant Chat as Oh My Pi
-  participant Tool as android_security
-  participant Disk as App folder
-
-  You->>Chat: /android-scan
-  Chat->>Tool: scan
-  Tool->>Disk: read source, write store and baseline
-  Tool-->>You: candidates, upheld findings, baseline note
-
-  You->>Chat: /android-review
-  Chat->>Tool: read page 1, then the next page
-  Tool-->>Chat: one directory, rule hits, code-map links
-  Chat->>Tool: record a missed line, or hypothesize
-  Chat->>Tool: judge
-  Tool-->>You: only upheld findings are vulnerabilities
-
-  You->>Chat: /android-fix FINDING_ID
-  Tool->>Disk: store a diff, leave the source file
-  You->>Chat: /android-accept FINDING_ID
-  Tool->>Disk: write the patch
-```
+![Review flow between you, the Oh My Pi chat, the android_security tool, and the app folder](docs/diagrams/review-sequence.png)
 
 On each source page the model is told to learn what that directory does, then judge every line. Lines the rules already recorded are left alone. A line the rules missed is recorded on that file and line, then the model continues. A fix is staged only when the same screen, data, and user step still work. If the safe change would remove a feature, it stays a recommendation.
 
@@ -162,31 +121,7 @@ node --experimental-strip-types src/cli.ts reject <finding-id> /path/to/android-
 
 ## What each part is for
 
-```mermaid
-flowchart LR
-  subgraph session ["Oh My Pi session"]
-    prompt["prompts/harness.md"]
-    agents["agents/"]
-    skill["skills/secure-droid/"]
-  end
-  subgraph harness ["SecureDroid"]
-    tool["android_security"]
-    rules["rules and standards"]
-    runtime["call path"]
-    engines["Semgrep and ast-grep"]
-    memory["research threads"]
-    log["activity log"]
-    patch["staged patch"]
-  end
-  session --> tool
-  tool --> rules
-  tool --> runtime
-  tool --> engines
-  tool --> memory
-  tool --> log
-  tool --> patch
-  patch --> you["You accept or reject"]
-```
+![Architecture: the Oh My Pi session calls android_security, which holds the rules, call path, scanners, source pages, code map, research threads, activity log, and staged patch](docs/diagrams/architecture.png)
 
 | Piece | Role |
 |---|---|
